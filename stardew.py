@@ -4,14 +4,64 @@
 Constants and functions related to Stardew Valley
 """
 
+NPC_UNKNOWN = "<unknown>"
 LOCATION_UNKNOWN = "<unknown>"
+ARTIFACT = ("Artifact Spot",)
+
+NPCS = (
+  "Abigail",
+  "Alex",
+  "Birdie",
+  "Bouncer",
+  "Caroline",
+  "Clint",
+  "Demetrius",
+  "Dwarf",
+  "Elliott",
+  "Emily",
+  "Evelyn",
+  "George",
+  "Gunther",
+  "Gus",
+  "Haley",
+  "Harvey",
+  "Henchman",
+  "Jas",
+  "Jodi",
+  "Krobus",
+  "Leah",
+  "Lewis",
+  "Linus",
+  "Marlon",
+  "Marnie",
+  "Maru",
+  "Mister Qi",
+  "Pam",
+  "Penny",
+  "Pierre",
+  "Robin",
+  "Sam",
+  "Sandy",
+  "Sebastian",
+  "Shane",
+  "Vincent",
+  "Willy",
+  "Wizard",
+  NPC_UNKNOWN
+)
 
 LOCATIONS = (
   "AbandonedJojaMart",
   "AdventureGuild",
+  "AnimalShop",
+  "Backwoods",
   "BathHousePool",
+  "BathHouse_Entry",
+  "BathHouse_MensLocker",
+  "BathHouse_WomensLocker",
   "Beach",
   "BeachNightMarket",
+  "Blacksmith",
   "BoatTunnel",
   "BugLand",
   "BusStop",
@@ -20,11 +70,16 @@ LOCATIONS = (
   "Club",
   "CommunityCenter",
   "Desert",
+  "ElliottHouse",
   "Farm",
   "FarmCave",
   "FarmHouse",
   "FishShop",
   "Forest",
+  "Greenhouse",
+  "HaleyHouse",
+  "HarveyRoom",
+  "Hospital",
   "IslandEast",
   "IslandFarmCave",
   "IslandFarmHouse",
@@ -39,6 +94,9 @@ LOCATIONS = (
   "IslandWest",
   "IslandWestCave1",
   "JojaMart",
+  "JoshHouse",
+  "LeahHouse",
+  "LeoTreeHouse",
   "LibraryMuseum",
   "ManorHouse",
   "MermaidHouse",
@@ -46,15 +104,32 @@ LOCATIONS = (
   "Mountain",
   "MovieTheater",
   "Railroad",
+  "Saloon",
+  "SamHouse",
+  "SandyHouse",
+  "ScienceHouse",
+  "SebastianRoom",
   "SeedShop",
   "Sewer",
+  "SkullCave",
   "Submarine",
   "Summit",
+  "Sunroom",
+  "Tent",
   "Town",
+  "Trailer",
+  "Trailer_Big",
+  "Tunnel",
+  "WitchHut",
+  "WitchSwamp",
+  "WitchWarpCave",
   "WizardHouse",
+  "WizardHouseBasement",
   "Woods",
   LOCATION_UNKNOWN
 )
+
+# Map Objects {{{0
 
 FORAGE_SPRING = (
   "Wild Horseradish",
@@ -122,7 +197,8 @@ FORAGE_ISLAND = (
   "Magma Cap"
 )
 
-FORAGE = set(FORAGE_SPRING +
+FORAGE = set(
+    FORAGE_SPRING +
     FORAGE_SUMMER +
     FORAGE_FALL +
     FORAGE_WINTER +
@@ -130,5 +206,9 @@ FORAGE = set(FORAGE_SPRING +
     FORAGE_MINES +
     FORAGE_DESERT +
     FORAGE_ISLAND)
+
+# 0}}}
+
+
 
 # vim: set ts=2 sts=2 sw=2:

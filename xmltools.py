@@ -11,31 +11,97 @@ import sys
 import xml.dom.minidom as minidom
 
 def getLogger():
+  "Get the logger for this module"
   return logging.getLogger(__name__)
 
 # Special key for object attributes
 OBJ_KEY_ATTRIBS = "__attrs"
 
-def getNodeChildren(node):
+def hasTag(node, tag, ignorecase=False):
+  "True if the node has the given tag"
+  if node.tagName == tag:
+    return True
+  if ignorecase and node.tagName.lower() == tag.lower():
+    return True
+  return False
+
+def getNodeChildren(node, names_only=False):
   "Get all children of a node"
   cnode = node.firstChild
   while cnode is not None:
-    yield cnode
+    if names_only:
+      yield cnode.tagName
+    else:
+      yield cnode
     cnode = cnode.nextSibling
 
-def getChildNode(node, tag):
+def nodeHasChild(node, tag, ignorecase=False):
+  "Return True if the node has an immediate child with the given tag name"
+  for cnode in getNodeChildren(node):
+    if hasTag(cnode, tag, ignorecase=ignorecase):
+      return True
+  return False
+
+def getChildNode(node, tag, ignorecase=False):
   "Get the first child with the given tag"
   for cnode in getNodeChildren(node):
-    if cnode.tagName == tag:
+    if cnode.nodeType == minidom.Element.TEXT_NODE:
+      continue
+    if hasTag(cnode, tag, ignorecase=ignorecase):
       return cnode
   getLogger().debug("Failed to find child %s of node %s", tag, node)
   return None
 
+def findChildren(node, func, first=True):
+  """
+  Recursively find children satisfying the function. If first is True, yield
+  only the first match. Otherwise, yield all of them.
+  """
+  for cnode in getNodeChildren(node):
+    if func(cnode):
+      yield cnode
+      if first:
+        break
+    elif not isPlainTextNode(cnode):
+      yield from findChildren(cnode, func, first=first)
+
+def findChildrenNodes(node, tag, ignorecase=False, first=True):
+  """
+  Recursively find children with the given tag. If first is True, yield only
+  the first match. Otherwise, yield all of them.
+  """
+  def matcher(cnode):
+    "True if the node has the above tag"
+    if cnode.nodeType != minidom.Element.TEXT_NODE:
+      return hasTag(cnode, tag, ignorecase=ignorecase)
+  yield from findChildren(node, matcher, first=first)
+
+def descend(node, slashed_path, ignorecase=False):
+  "Quickly get a child node based on the slashed path"
+  head, tail = slashed_path, ""
+  if "/" in slashed_path:
+    head, tail = slashed_path.split("/", 1)
+  cnode = getChildNode(node, head)
+  if cnode:
+    if tail:
+      return descend(cnode, tail, ignorecase=ignorecase)
+    return cnode
+  return None
+
+def descendAll(node, slashed_path, ignorecase=False):
+  "Like descend(), but return all matching nodes"
+  head, tail = slashed_path, ""
+  if "/" in slashed_path:
+    head, tail = slashed_path.split("/", 1)
+  cnodes = findChildrenNodes(node, head, ignorecase=ignorecase, first=False)
+  for cnode in cnodes:
+    if tail:
+      yield from descendAll(cnode, tail, ignorecase=ignorecase)
+    else:
+      yield cnode
+
 def getNodeText(node):
   "Get the text of a node containing only text"
-  if node is None:
-    getLogger().warning("Trying to get text of None")
-    return None
   cnode = node.firstChild
   if cnode and cnode.nodeType == minidom.Element.TEXT_NODE:
     return cnode.nodeValue
@@ -43,7 +109,15 @@ def getNodeText(node):
 
 def isPlainTextNode(node):
   "True if the node only contains text"
-  return getNodeText(node) is not None
+  if not node:
+    return False
+  if not node.firstChild:
+    return False
+  if node.firstChild.nextSibling:
+    return False
+  if node.firstChild.nodeType != minidom.Element.TEXT_NODE:
+    return False
+  return True
 
 def isCoordNode(node):
   "True if the node just has two children: 'X' and 'Y'"
