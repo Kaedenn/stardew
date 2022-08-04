@@ -147,7 +147,11 @@ def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
   if isPlainTextNode(node):
     # unfortunately, attributes in plain text nodes are ignored
     value = doMapFunc(key, getNodeText(node))
-    if value is not None:
+    if value == 'true':
+      results[key] = True
+    elif value == 'false':
+      results[key] = False
+    elif value is not None:
       results[key] = value
   elif isCoordNode(node) and interpretPoints:
     results[key] = doMapFunc(key, nodeToCoord(node))
