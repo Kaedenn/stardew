@@ -31,10 +31,16 @@ logging.addLevelName(logging.TRACE, "TRACE")
 logging.Logger.trace = lambda self, *a, **kw: self.log(logging.TRACE, *a, **kw)
 
 if platform.system() == "Linux":
-  SVPATH = os.path.expanduser("~/.config/StardewValley/Saves")
+  data_dir = os.environ.get("XDG_DATA_DIR", os.path.expanduser("~/.config"))
+  SVPATH = os.path.join(data_dir, "StardewValley/Saves")
 elif platform.system() == "Windows":
-  sys.stderr.write("WARNING: This program is not tested against Windows\n")
-  SVPATH = os.environ.get("HOME", "")
+  data_dir = os.environ.get("APPDATA")
+  SVPATH = os.path.join(data_dir, r"StardewValley\Saves")
+else:
+  sys.stderr.write("WARNING: Unable to determine save path for your OS\n")
+  SVPATH = os.path.expanduser("~/.config/StardewValley/Saves")
+  sys.stderr.write(f"WARNING: Using the following save path: {SVPATH}\n")
+
 VALID_CATEGORIES = ("forage", "artifact", "crops")
 
 MAP_OBJECTS = "objects"
@@ -201,6 +207,7 @@ def object_json(objnode, formatters=()):
   filt_false = ("false" in formatters)
   filt_zero = ("zero" in formatters)
   filt_points = ("points" in formatters)
+  # TODO: implement "crops" filter
   def map_func(key, value):
     orig_val = value
     if isinstance(value, str):
@@ -223,6 +230,7 @@ def object_json(objnode, formatters=()):
       logger.debug("Filtering out zero key %s (val %r)", key, orig_val)
       return None
     return value
+
   return json.dumps(
       xmltools.dumpNodeRec(objnode,
         mapFunc=map_func,
@@ -299,11 +307,7 @@ def matches(seq, term):
       return True
   return None
 
-def get_all_objects(root,
-    mapnames,
-    objnames,
-    objtypes,
-    objcats,
+def get_all_objects(root, mapnames, objnames, objtypes, objcats,
     features=MAP_OBJECTS):
   "Get all objects (as 4-tuples) matching any of the given conditions"
 
