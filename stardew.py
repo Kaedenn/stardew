@@ -17,7 +17,7 @@ def _load_data(name, reader=None):
       return fobj.read().splitlines()
     return reader(fobj)
 
-class Obj(enum.Enum):
+class Data(enum.Enum):
   "Object field names"
   NAME = "name"
   VALUE = "value"
@@ -44,14 +44,14 @@ def _parse_object(odef):
     otype = type_cat
     category = None
   return {
-    Obj.NAME: name,
-    Obj.VALUE: value,
-    Obj.EDIBILITY: edibility,
-    Obj.TYPE: otype,
-    Obj.CATEGORY: category,
-    Obj.DISPLAY: disp_name,
-    Obj.DESCRIPTION: desc,
-    Obj.EXTRAS: extras
+    Data.NAME: name,
+    Data.VALUE: value,
+    Data.EDIBILITY: edibility,
+    Data.TYPE: otype,
+    Data.CATEGORY: category,
+    Data.DISPLAY: disp_name,
+    Data.DESCRIPTION: desc,
+    Data.EXTRAS: extras
   }
 
 NPC_UNKNOWN = "<unknown>"

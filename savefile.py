@@ -20,9 +20,9 @@ import platform
 import sys
 import xml.dom.minidom as minidom
 
-from colorterm import ColorFormatter as C
+from utility.colorterm import ColorFormatter as C
 import stardew
-from stardew import Obj as O
+from stardew import Data as D
 import xmltools
 
 # Add "TRACE" with a level of 5 (DEBUG is 10) and logger.trace to use it
@@ -30,16 +30,18 @@ logging.TRACE = 5
 logging.addLevelName(logging.TRACE, "TRACE")
 logging.Logger.trace = lambda self, *a, **kw: self.log(logging.TRACE, *a, **kw)
 
-if platform.system() == "Linux":
-  data_dir = os.environ.get("XDG_DATA_DIR", os.path.expanduser("~/.config"))
-  SVPATH = os.path.join(data_dir, "StardewValley/Saves")
-elif platform.system() == "Windows":
-  data_dir = os.environ.get("APPDATA")
-  SVPATH = os.path.join(data_dir, r"StardewValley\Saves")
-else:
+def get_data_dir():
+  "Find the directory containing the StardewValley folder"
+  home_config = os.path.expanduser("~/.config")
+  if platform.system() == "Linux":
+    return os.environ.get("XDG_DATA_DIR", home_config)
+  if platform.system() == "Windows":
+    return os.environ.get("APPDATA")
   sys.stderr.write("WARNING: Unable to determine save path for your OS\n")
-  SVPATH = os.path.expanduser("~/.config/StardewValley/Saves")
-  sys.stderr.write(f"WARNING: Using the following save path: {SVPATH}\n")
+  sys.stderr.write("WARNING: Defaulting to {home_config}\n")
+  return home_config
+
+SVPATH = os.path.join(get_data_dir(), "StardewValley/Saves")
 
 VALID_CATEGORIES = ("forage", "artifact", "crops")
 
@@ -76,44 +78,58 @@ logging.basicConfig(format="%(module)s:%(lineno)s: %(levelname)s: %(message)s",
 logger = logging.getLogger(__name__)
 
 def isdigit(value):
-  "True if value is a number"
-  if not value.isdigit():
-    if value.startswith("-") and value[1:].isdigit():
-      return True
+  "True if value is an integer"
+  try:
+    int(value)
+    return True
+  except ValueError:
     return False
-  return True
+
+def isnumber(value):
+  "True if value is a number"
+  try:
+    float(value)
+    return True
+  except ValueError:
+    return False
 
 def cmp(obj1, obj2):
   "Three-way compare two objects like Python2 did"
   return (obj1 > obj2) - (obj1 < obj2)
+
+def is_farm_save(svpath):
+  "True if the path looks like it's a farm's save directory"
+  if os.path.isdir(svpath):
+    svname = os.path.basename(svpath)
+    if os.path.isfile(os.path.join(svpath, svname)):
+      if svname.count("_") == 1 and svname[svname.index("_")+1:].isdigit():
+        return True
+  return False
 
 def deduce_save_file(svname, svpath=SVPATH):
   "Determine a save file based only on the name of the farm"
   logger.debug("Searching for %s in %s", svname, svpath)
   for fname in os.listdir(svpath):
     fpath = os.path.join(svpath, fname)
-    if os.path.isdir(fpath) and fname.count("_") == 1:
-      farm, fid = fname.split("_")
-      logger.trace("Farm %s ID %s", farm, fid)
+    if is_farm_save(fpath):
+      farm, farmid = fname.split("_")
+      logger.trace("Found farm %s with ID %s at %s", farm, farmid, fpath)
       if farm == svname:
         logger.debug("Found %s", os.path.join(svpath, fname))
         return os.path.join(svpath, fname)
-  logger.debug("Failed to find farm %s in %s", svname, svpath)
+  logger.warning("Failed to find farm %s in %s", svname, svpath)
   return None
 
-def load_save(svdir, svpath=SVPATH):
-  "Load a save file by name, directory path, or file path"
-  if os.path.isabs(svdir):
-    path = svdir
-    svname = os.path.basename(svdir)
+def load_save_file(svpath):
+  "Load a save by either directory or file path"
+  if os.path.isdir(svpath):
+    svdir = svpath
+    svname = os.path.basename(svpath)
   else:
-    path = os.path.join(svpath, svdir)
-    svname = svdir
-  logger.debug("Save dir: %s name %s", path, svname)
-  fpath = path
-  if os.path.isdir(path):
-    fpath = os.path.join(path, svname)
-  return minidom.parse(open(fpath, "rt"))
+    svdir, svname = os.path.split(svpath)
+  svfile = os.path.join(svdir, svname)
+  logger.debug("Loading %s from %s", svname, svdir)
+  return minidom.parse(open(svfile, "rt"))
 
 def is_nil_node(node):
   "True if the object is just xsi:nil"
@@ -138,13 +154,13 @@ def map_get_objects(melem):
   for node in melem.getElementsByTagName("Object"):
     if not is_nil_node(node):
       oname = get_obj_name(node)
-      objpos = xmltools.nodeToCoord(xmltools.getChildNode(node, "tileLocation"))
+      objpos = xmltools.nodeToCoord(xmltools.getNodeChild(node, "tileLocation"))
       yield oname, objpos, node
 
 def map_get_features(melem, large=False):
   "Get terrain features within a game location"
-  small_node = xmltools.getChildNode(melem, "terrainFeatures")
-  large_node = xmltools.getChildNode(melem, "largeTerrainFeatures")
+  small_node = xmltools.getNodeChild(melem, "terrainFeatures")
+  large_node = xmltools.getNodeChild(melem, "largeTerrainFeatures")
   for node in xmltools.getNodeChildren(small_node):
     if not is_nil_node(node):
       knode = xmltools.descend(node, "key/Vector2")
@@ -175,7 +191,7 @@ def get_obj_name(node):
   oname = node.getAttribute("xsi:type")
   if oname:
     return oname
-  cnode = xmltools.getChildNode(node, "Name", ignorecase=True)
+  cnode = xmltools.getNodeChild(node, "Name", ignorecase=True)
   if cnode:
     return cnode.firstChild.nodeValue
   return None
@@ -183,15 +199,16 @@ def get_obj_name(node):
 def get_obj_type(node):
   "Get an object's type (category)"
   if xmltools.nodeHasChild(node, "type"):
-    return xmltools.getNodeText(xmltools.getChildNode(node, "type"))
+    return xmltools.getNodeText(xmltools.getNodeChild(node, "type"))
   return get_obj_name(node)
 
 def is_crop(node):
   "True if the node is a non-empty HoeDirt"
   if get_obj_type(node) == "HoeDirt":
-    cnode = xmltools.descend(node, "crop/seedIndex")
-    if cnode and xmltools.getNodeText(cnode) != "-1":
-      return True
+    if xmltools.nodeHasChild(node, "crop"):
+      cnode = xmltools.descend(node, "crop/seedIndex")
+      if cnode and xmltools.getNodeText(cnode) != "-1":
+        return True
   return False
 
 def aggregate_objects(objlist):
@@ -202,98 +219,132 @@ def aggregate_objects(objlist):
     bymap[mapname][objname] = mcount + 1
   return bymap
 
-def object_json(objnode, formatters=()):
-  "Convert an XML node to JSON (crudely)"
-  filt_false = ("false" in formatters)
-  filt_zero = ("zero" in formatters)
-  filt_points = ("points" in formatters)
-  # TODO: implement "crops" filter
+def node_to_dict(objnode, formatters=()):
+  "Convert an XML node to a Python dictionary (crudely)"
+  filter_false = ("false" in formatters)
+  filter_zero = ("zero" in formatters)
+  filter_points = ("points" in formatters)
+
   def map_func(key, value):
     orig_val = value
+
+    # booleans, numbers
     if isinstance(value, str):
       if value in ("true", "false"):
         value = (value == "true")
       elif isdigit(value):
         value = int(value)
-    elif isinstance(value, (list, tuple)) \
+      elif isnumber(value):
+        value = float(value)
+
+    # pairs of numbers
+    if isinstance(value, (list, tuple)) \
         and len(value) == 2 \
         and isdigit(value[0]) and isdigit(value[1]):
       value = (int(value[0]), int(value[1]))
-    if filt_false:
+
+    if filter_false:
       if value is False:
         logger.debug("Filtering out False key %s (val %r)", key, orig_val)
         return None
       if isinstance(value, (dict, list, tuple)) and not value:
         logger.debug("Filtering out empty key %s (val %r)", key, orig_val)
         return None
-    if filt_zero and value == 0:
+    if filter_zero and value == 0:
       logger.debug("Filtering out zero key %s (val %r)", key, orig_val)
       return None
     return value
 
-  return json.dumps(
-      xmltools.dumpNodeRec(objnode,
-        mapFunc=map_func,
-        interpretPoints=filt_points),
-      indent=2, sort_keys=True)
+  return xmltools.dumpNodeRec(objnode,
+      mapFunc=map_func,
+      interpretPoints=filter_points)
 
-def print_crop(objdef, verbosity=OUT_BRIEF):
+def node_to_json(objnode, formatters=()):
+  "Convert an XML node to JSON (crudely)"
+  data = node_to_dict(objnode, formatters=formatters)
+  return json.dumps(data, indent=2, sort_keys=True)
+
+def print_crop(objdef, data_level=OUT_BRIEF):
   "Print a 4-tuple object representing a crop"
   mapname, objname, objpos, objnode = objdef
-  notes = []
-  feat_data = xmltools.dumpNodeRec(objnode)["TerrainFeature"]
-  crop = feat_data["crop"]
-  objname = stardew.get_object(crop["seedIndex"], field=O.NAME)
+  feature = node_to_dict(objnode)
+  if "TerrainFeature" in feature:
+    feature = feature["TerrainFeature"]
+  else:
+    logger.error("Malformed feature %r", feature)
+  crop = feature["crop"]
+  cropname = stardew.get_object(crop["seedIndex"], field=D.NAME)
+  fertilizer = feature["fertilizer"]
+
+  logger.trace(feature)
+
+  labels = [] # colored strings, joined by spaces
+  notes = []  # uncolored strings, joined by semicolons
+
+  # TODO: color appropriately
   if crop.get("dead"):
-    notes.append("dead")
+    labels.append(C(C.BRN, "dead"))
+  # TODO: color appropriately
   if crop.get("fullGrown"):
-    notes.append("ready")
-  fertilizer = int(feat_data["fertilizer"])
-  forage = crop["forageCrop"]
-  phase = int(crop["currentPhase"])
-  phase_days = int(crop.get("phaseDays", {}).get("int"))
-  min_harvest = int(crop["minHarvest"])
-  max_harvest = int(crop["maxHarvest"])
-  if verbosity >= OUT_NORMAL:
+    labels.append(C(C.GRN, C.BOLD, "ready"))
+
+  # TODO: color appropriately
+  if data_level >= OUT_NORMAL:
+    if fertilizer == 0:
+      labels.append(C(C.RED, "unfertilized"))
+
+  # TODO: color appropriately
+  if data_level >= OUT_LONG:
+    if fertilizer > 0:
+      labels.append(C(C.ITAL, stardew.get_object(fertilizer, field=D.NAME)))
     if crop.get("seasonsToGrowIn"):
       seasons = crop["seasonsToGrowIn"]
       seasons = seasons.get("string", seasons)
-      # TODO: color text appropriately
       notes.append(f"{seasons}")
-  if verbosity >= OUT_LONG:
-    if forage:
+    if crop["forageCrop"]:
       notes.append("forage")
-    if fertilizer > 0:
-      fertilizer = stardew.get_object(fertilizer, field=O.NAME)
-      notes.append(f"fertilizer={fertilizer!r}")
-  if verbosity >= OUT_FULL:
-    notes.append(f"phase={phase} days={phase_days}")
+    if crop["regrowAfterHarvest"] > 0:
+      notes.append("regrows")
+    if crop["chanceForExtraCrops"] > 0:
+      chance = crop["chanceForExtraCrops"] * 100
+      notes.append(f"extra={chance}%")
+
+  # TODO: color appropriately
+  if data_level >= OUT_FULL:
+    phase = int(crop["currentPhase"])
+    phase_day = crop.get("dayOfCurrentPhase", "?")
+    min_harvest = int(crop["minHarvest"])
+    max_harvest = int(crop["maxHarvest"])
+    notes.append(f"phase={phase} day={phase_day}")
     if min_harvest == max_harvest:
       notes.append(f"yield={min_harvest}")
     elif min_harvest and max_harvest:
       notes.append(f"yield={min_harvest} to {max_harvest}")
-  print("{} {} at ({}, {}) {}".format(
+
+  print("{} {} at ({}, {}) {} {}".format(
     C(C.GRN, mapname),
-    C(C.CYN, C.BOLD, objname),
+    C(C.CYN, C.BOLD, cropname),
     C(C.BOLD, f"{objpos[0]}"),
     C(C.BOLD, f"{objpos[1]}"),
-    "; ".join(notes)))
+    " ".join(labels),
+    "; ".join(notes)).replace("  ", " ").strip())
 
-def print_object(objdef, long=False, formatters=(), verbosity=OUT_BRIEF):
+def print_object(objdef, long=False, formatters=(), data_level=OUT_BRIEF):
   "Print a 4-tuple object"
   mapname, objname, objpos, objnode = objdef
+  format_crop = ("crops" in formatters)
   if not long:
-    if "crops" in formatters and is_crop(objnode):
-      print_crop(objdef, verbosity=verbosity)
+    if format_crop and is_crop(objnode):
+      print_crop(objdef, data_level=data_level)
     else:
       mapname = C(C.GRN, mapname)
       objname = C(C.CYN, C.BOLD, objname)
       objx = C(C.BOLD, f"{objpos[0]}")
       objy = C(C.BOLD, f"{objpos[1]}")
-      # TODO: adjust based on verbosity level
+      # TODO: adjust based on data_level level
       print("{} {} at ({}, {})".format(mapname, objname, objx, objy))
   else:
-    print(object_json(objnode, formatters=formatters))
+    print(node_to_json(objnode, formatters=formatters))
 
 def matches(seq, term):
   "True if seq includes term, False if seq forbids term, None otherwise"
@@ -377,7 +428,6 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
       show = True
 
     if show is True:
-      logger.trace("%s %s %s object", mname, oname, opos)
       yield mname, oname, opos, obj
 
 def get_object_counts(objs, mapname=None, sort=False):
@@ -464,7 +514,7 @@ The following arguments support negation by prefixing the value with '!':
 The following arguments support simple glob patterns via fnmatch:
   -n,--name  -m,--map  -t,--type
 
-The -i,--include argument accepts the following values:
+-i,--include accepts the following values:
   objects     objects (forage, artifact spots, placed things)
   crops       hoe dirt with a crop
   small       small terrain features (trees, hoe dirt, flooring, fruit trees)
@@ -472,8 +522,15 @@ The -i,--include argument accepts the following values:
   features    both small and large terrain features
   all         objects and terrain features
 
+--info-level expects a number between {B} and {F} inclusive:
+  {B}           include dead and ready
+  {N}           include crop seasons
+  {L}           include crop forage and fertilizer
+  {F}           include crop phase, yield, and harvest count
+
 Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
-""", formatter_class=ArgFormatter)
+""".format(B=OUT_BRIEF, N=OUT_NORMAL, L=OUT_LONG, F=OUT_FULL),
+      formatter_class=ArgFormatter)
   ag = ap.add_argument_group("farm selection")
   mg = ag.add_mutually_exclusive_group()
   mg.add_argument("--farm", metavar="NAME",
@@ -494,9 +551,9 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
       help="show aggregate information about object counts")
   ag.add_argument("-s", "--sort", action="store_true",
       help="sort output where possible")
-  ag.add_argument("-l", "--verbosity-level", type=int, default=OUT_BRIEF,
+  ag.add_argument("-l", "--info-level", type=int, default=OUT_BRIEF,
       choices=range(OUT_FULL+1),
-      help="output level: amount of information displayed")
+      help="amount of crop information to display")
   ag = ap.add_argument_group("output filtering")
   ag.add_argument("-m", "--map", action="append", metavar="MAP",
       help="limit to specific maps")
@@ -516,7 +573,7 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
       help="disable color output")
   mg = ag.add_mutually_exclusive_group()
   mg.add_argument("-v", "--verbose", action="count",
-      help="enable verbose-level output, twice to enable trace-level output")
+      help="-v for verbose output, -vv for trace output")
   args = ap.parse_args()
   if args.verbose == 1:
     logger.setLevel(logging.DEBUG)
@@ -527,7 +584,6 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
   if args.no_color:
     C.disable()
 
-  logger.debug("Data: %s", stardew.DATA_PATH)
   logger.debug("NPCS: %d", len(stardew.NPCS))
   logger.debug("LOCATIONS: %d", len(stardew.LOCATIONS))
   logger.debug("OBJECTS: %d", len(stardew.OBJECTS))
@@ -553,7 +609,7 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
   if not savepath or not os.path.exists(savepath):
     ap.error("Failed to find farm")
 
-  root = load_save(savepath, svpath=svpath)
+  root = load_save_file(savepath)
 
   feature_kinds = MAP_OBJECTS
   if args.include is not None:
@@ -587,7 +643,7 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
       objs.sort(key=lambda odef: (odef[0], odef[1], odef[2]))
     for objdef in objs:
       print_object(objdef, long=args.long, formatters=formatters,
-          verbosity=args.verbosity_level)
+          data_level=args.info_level)
 
 if __name__ == "__main__":
   main()

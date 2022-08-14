@@ -42,7 +42,7 @@ def nodeHasChild(node, tag, ignorecase=False):
       return True
   return False
 
-def getChildNode(node, tag, ignorecase=False):
+def getNodeChild(node, tag, ignorecase=False):
   "Get the first child with the given tag"
   for cnode in getNodeChildren(node):
     if cnode.nodeType == minidom.Element.TEXT_NODE:
@@ -62,7 +62,7 @@ def findChildren(node, func, first=True):
       yield cnode
       if first:
         break
-    elif not isPlainTextNode(cnode):
+    elif not isTextNode(cnode):
       yield from findChildren(cnode, func, first=first)
 
 def findChildrenNodes(node, tag, ignorecase=False, first=True):
@@ -81,7 +81,7 @@ def descend(node, slashed_path, ignorecase=False):
   head, tail = slashed_path, ""
   if "/" in slashed_path:
     head, tail = slashed_path.split("/", 1)
-  cnode = getChildNode(node, head)
+  cnode = getNodeChild(node, head)
   if cnode:
     if tail:
       return descend(cnode, tail, ignorecase=ignorecase)
@@ -107,7 +107,7 @@ def getNodeText(node):
     return cnode.nodeValue
   return None
 
-def isPlainTextNode(node):
+def isTextNode(node):
   "True if the node only contains text"
   if not node:
     return False
@@ -119,24 +119,27 @@ def isPlainTextNode(node):
     return False
   return True
 
-def isCoordNode(node):
+def isCoordNode(node): # XXX: move to savefile.py
   "True if the node just has two children: 'X' and 'Y'"
   cnames = [cnode.nodeName for cnode in getNodeChildren(node)]
   if set(cnames) == set(("X", "Y")):
     return True
   return False
 
-def nodeToCoord(node):
+def nodeToCoord(node): # XXX: move to savefile.py
   "Convert a coordinate node to a coordinate pair"
   if node:
-    xnode = getChildNode(node, "X")
-    ynode = getChildNode(node, "Y")
+    xnode = getNodeChild(node, "X")
+    ynode = getNodeChild(node, "Y")
     if xnode and ynode:
       return getNodeText(xnode), getNodeText(ynode)
   return None, None
 
 def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
-  "Interpret XML as a Python dict"
+  """Interpret XML as a Python dict
+
+  mapFunc, if specified, will be called on the resulting Python type.
+  """
   def doMapFunc(kval, vval):
     if mapFunc is not None:
       return mapFunc(kval, vval)
@@ -144,7 +147,7 @@ def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
 
   key = node.nodeName
   results = collections.defaultdict(dict)
-  if isPlainTextNode(node):
+  if isTextNode(node):
     # unfortunately, attributes in plain text nodes are ignored
     value = doMapFunc(key, getNodeText(node))
     if value == 'true':
