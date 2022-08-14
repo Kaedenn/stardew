@@ -4,11 +4,6 @@
 Tools for examining the Stardew Valley save files
 """
 
-# TODO:
-# Implement filtering for crops
-# Implement filtering for small terrain features (if needed?)
-# Implement filtering for large terrain features (if needed?)
-
 import argparse
 import collections
 import fnmatch
