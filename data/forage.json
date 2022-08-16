@@ -1,0 +1,60 @@
+{
+  "spring": [
+    "Wild Horseradish",
+    "Daffodil",
+    "Leek",
+    "Dandelion",
+    "Spring Onion",
+    "Common Mushroom",
+    "Morel",
+    "Salmonberry"
+  ],
+  "summer": [
+    "Grape",
+    "Spice Berry",
+    "Sweet Pea",
+    "Red Mushroom",
+    "Fiddlehead Fern",
+    "Common Mushroom"
+  ],
+  "fall": [
+    "Common Mushroom",
+    "Wild Plum",
+    "Hazelnut",
+    "Blackberry",
+    "Chanterelle",
+    "Red Mushroom",
+    "Purple Mushroom"
+  ],
+  "winter": [
+    "Winter Root",
+    "Crystal Fruit",
+    "Snow Yam",
+    "Crocus",
+    "Holly"
+  ],
+  "beach": [
+    "Nautilus Shell",
+    "Coral",
+    "Sea Urchin",
+    "Rainbow Shell",
+    "Clam",
+    "Cockle",
+    "Mussel",
+    "Oyster",
+    "Seaweed"
+  ],
+  "mines": [
+    "Red Mushroom",
+    "Purple Mushroom",
+    "Cave Carrot"
+  ],
+  "desert": [
+    "Cactus Fruit",
+    "Coconut"
+  ],
+  "island": [
+    "Ginger",
+    "Magma Cap"
+  ]
+}
