@@ -104,12 +104,21 @@ def is_farm_save(svpath):
 def deduce_save_file(svname, svpath=SVPATH):
   "Determine a save file based only on the name of the farm"
   logger.debug("Searching for %s in %s", svname, svpath)
+
+  # Handle cases where we're passed a path
+  if os.path.exists(svname):
+    if os.path.isdir(svname):
+      fname = os.path.basename(svname.rstrip("/"))
+      return os.path.join(svname, fname)
+    if os.path.isfile(svname):
+      return svname
+
   for fname in os.listdir(svpath):
     fpath = os.path.join(svpath, fname)
     if is_farm_save(fpath):
       farm, farmid = fname.split("_")
       logger.trace("Found farm %s with ID %s at %s", farm, farmid, fpath)
-      if farm == svname:
+      if svname in (fname, farm):
         logger.debug("Found %s", os.path.join(svpath, fname))
         return os.path.join(svpath, fname)
   logger.warning("Failed to find farm %s in %s", svname, svpath)
@@ -493,12 +502,12 @@ class ArgFormatter(argparse.RawDescriptionHelpFormatter):
 def main():
   "Entry point"
   ap = argparse.ArgumentParser(epilog="""
-The following logic is used to determine the path to your farm file:
-  If -f,--file is given, use that.
-  Otherwise, if --farm is given, then scan the save path (see -P,--save-path).
-  If this fails, the program aborts with an error.
-  Otherwise, if --list is given, then list all farms in the save path and exit.
-  Otherwise, print the program usage and exit.
+You can specify which save to process by one of the following:
+  1) The farm's name
+  2) The farm's name and ID (the name of the save file)
+  3) Path to the farm's save directory
+  4) Path to the farm's save file
+Use --list to enumerate the available saves.
 
 The following arguments can be specified multiple times:
   -n,--name  -F,--formatter  -m,--map  -t,--type  -C,--category  -i,--include
@@ -527,11 +536,8 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
 """.format(B=OUT_BRIEF, N=OUT_NORMAL, L=OUT_LONG, F=OUT_FULL),
       formatter_class=ArgFormatter)
   ag = ap.add_argument_group("farm selection")
-  mg = ag.add_mutually_exclusive_group()
-  mg.add_argument("--farm", metavar="NAME",
-      help="farm name")
-  mg.add_argument("-f", "--file", help="path to save file")
-  mg.add_argument("--list", action="store_true",
+  ag.add_argument("farm", nargs="?", help="farm name (see below)")
+  ag.add_argument("--list", action="store_true",
       help="list available save files")
   ag.add_argument("-P", "--save-path", default=SVPATH,
       help="path to saves")
@@ -583,26 +589,21 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
   logger.debug("LOCATIONS: %d", len(stardew.LOCATIONS))
   logger.debug("OBJECTS: %d", len(stardew.OBJECTS))
 
-  svpath = args.save_path
   if args.list:
-    # Simply list the save files available
-    for savename in os.listdir(svpath):
-      savepath = os.path.join(svpath, savename)
+    for savename in os.listdir(args.save_path):
+      savepath = os.path.join(args.save_path, savename)
       savefile = os.path.join(savepath, savename)
       if os.path.isdir(savepath) and os.path.exists(savefile):
         print(os.path.join(savepath, savename))
     raise SystemExit(0)
 
-  if not (args.farm or args.file):
+  if args.farm:
+    savepath = deduce_save_file(args.farm, svpath=args.save_path)
+    if not savepath or not os.path.exists(savepath):
+      ap.error("Failed to find farm")
+  else:
     ap.print_usage()
     raise SystemExit(0)
-
-  savepath = args.file
-  if args.farm:
-    savepath = deduce_save_file(args.farm, svpath=svpath)
-
-  if not savepath or not os.path.exists(savepath):
-    ap.error("Failed to find farm")
 
   root = load_save_file(savepath)
 
