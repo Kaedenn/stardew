@@ -1,10 +1,12 @@
 AbandonedJojaMart
 AdventureGuild
 AnimalShop
+ArchaeologyHouse
 Backwoods
 BathHousePool
 BathHouse_Entry
 BathHouse_MensLocker
+BathHouse_Pool
 BathHouse_WomensLocker
 Beach
 BeachNightMarket
@@ -13,7 +15,11 @@ BoatTunnel
 BugLand
 BusStop
 Caldera
+CaptainRoom
 Cellar
+Cellar2
+Cellar3
+Cellar4
 Club
 CommunityCenter
 Desert
@@ -34,6 +40,7 @@ IslandFieldOffice
 IslandHut
 IslandLocation
 IslandNorth
+IslandNorthCave1
 IslandShrine
 IslandSouth
 IslandSouthEast
@@ -50,6 +57,7 @@ MermaidHouse
 Mine
 Mountain
 MovieTheater
+QiNutRoom
 Railroad
 Saloon
 SamHouse

@@ -138,9 +138,8 @@ def load_save_file(svpath):
 def is_nil_node(node):
   "True if the object is just xsi:nil"
   if not node.firstChild:
-    if node.attributes:
-      if dict(node.attributes.items()).get("xsi:nil") == "true":
-        return True
+    if node.getAttribute("xsi:nil") == "true":
+      return True
   return False
 
 def get_locations(root):
@@ -192,12 +191,11 @@ def get_features(root, large=False):
 
 def get_obj_name(node):
   "Get an object's name"
-  oname = node.getAttribute("xsi:type")
-  if oname:
-    return oname
-  cnode = xmltools.getNodeChild(node, "Name", ignorecase=True)
-  if cnode:
-    return cnode.firstChild.nodeValue
+  if xmltools.nodeHasChild(node, "name", ignorecase=True):
+    cnode = xmltools.getNodeChild(node, "name", ignorecase=True)
+    return xmltools.getNodeText(cnode)
+  if node.hasAttribute("xsi:type"):
+    return node.getAttribute("xsi:type")
   return None
 
 def get_obj_type(node):
