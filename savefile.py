@@ -20,10 +20,7 @@ import stardew
 from stardew import Data as D
 import xmltools
 
-# Add "TRACE" with a level of 5 (DEBUG is 10) and logger.trace to use it
-logging.TRACE = 5
-logging.addLevelName(logging.TRACE, "TRACE")
-logging.Logger.trace = lambda self, *a, **kw: self.log(logging.TRACE, *a, **kw)
+import utility.tracelog
 
 def get_data_dir():
   "Find the directory containing the StardewValley folder"
@@ -64,10 +61,12 @@ OUT_BRIEF = 0
 OUT_NORMAL = 1
 OUT_LONG = 2
 OUT_FULL = 3
+OUT_LEVELS = (OUT_BRIEF, OUT_NORMAL, OUT_LONG, OUT_FULL)
 
 # For long-form output
 VALID_FORMATTERS = ("false", "zero", "points", "crops")
 
+utility.tracelog.hotpatch(logging)
 logging.basicConfig(format="%(module)s:%(lineno)s: %(levelname)s: %(message)s",
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -121,7 +120,7 @@ def deduce_save_file(svname, svpath=SVPATH):
       if svname in (fname, farm):
         logger.debug("Found %s", os.path.join(svpath, fname))
         return os.path.join(svpath, fname)
-  logger.warning("Failed to find farm %s in %s", svname, svpath)
+
   return None
 
 def load_save_file(svpath):
@@ -283,14 +282,11 @@ def print_crop(objdef, data_level=OUT_BRIEF):
   labels = [] # colored strings, joined by spaces
   notes = []  # uncolored strings, joined by semicolons
 
-  # TODO: color appropriately
   if crop.get("dead"):
     labels.append(C(C.BRN, "dead"))
-  # TODO: color appropriately
   if crop.get("fullGrown"):
     labels.append(C(C.GRN, C.BOLD, "ready"))
 
-  # TODO: color appropriately
   if data_level >= OUT_NORMAL:
     if fertilizer == 0:
       labels.append(C(C.RED, "unfertilized"))
@@ -350,7 +346,7 @@ def print_object(objdef, long=False, formatters=(), data_level=OUT_BRIEF):
 
 def matches(seq, term):
   "True if seq includes term, False if seq forbids term, None otherwise"
-  if not term:
+  if not term or not seq:
     return None
   for item in seq:
     if item.startswith("!") and fnmatch.fnmatch(item[1:], term):
@@ -365,7 +361,7 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
   "Get all objects (as 4-tuples) matching any of the given conditions"
 
   def update_show(new_show, curr_show):
-    "Determine if we should update the show value"
+    "Update the show value, honoring False precedence"
     if curr_show is None:
       return new_show
     if new_show is None:
@@ -374,7 +370,7 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
       return False
     return curr_show or new_show
 
-  def test_item(seq, term, curr_show):
+  def test_show(seq, term, curr_show):
     "Determine if we should show the object"
     new_show = None
     if term is not None:
@@ -407,13 +403,14 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
   for kind, mname, oname, opos, obj in get_things():
     show = None # tri-bool
 
-    # process maps first
+    # maps are exclusive
     if mapnames and not matches(mapnames, mname):
       show = False
 
+    # everything else is inclusive
     if objnames or objtypes or objcats:
-      show = test_item(objnames, oname, show)
-      show = test_item(objtypes, get_obj_type(obj), show)
+      show = test_show(objnames, oname, show)
+      show = test_show(objtypes, get_obj_type(obj), show)
       if kind == MAP_OBJECTS:
         if matches(objcats, "artifact") and oname in stardew.ARTIFACT:
           show = update_show(True, show)
@@ -460,10 +457,46 @@ def get_object_counts(objs, mapname=None, sort=False):
     return entries
   return []
 
+def _deduce_feature_kinds(includes):
+  "Deduce what kinds of things the user wants to examine"
+  feature_kinds = MAP_OBJECTS
+  if includes:
+    given_kinds = set()
+    for want_kind in includes:
+      given_kinds.update(MAP_ITEM_TYPES[want_kind].split("+"))
+    feature_kinds = "+".join(given_kinds)
+  return feature_kinds
+
+def _print_saves(savepath):
+  "Print a list of available saves"
+  for svname in os.listdir(savepath):
+    svpath = os.path.join(savepath, svname)
+    if is_farm_save(svpath):
+      print(svpath)
+
+def _print_counts(objs, maps, sort):
+  "Print aggregate counts"
+  prefix = "anywhere"
+  if maps:
+    prefix = "+".join(maps)
+  for objname, objcount in get_object_counts(objs, sort=sort):
+    prefix = C(C.GRN, prefix)
+    objname = C(C.CYN, objname)
+    print("{} {} {}".format(prefix, objname, objcount))
+
+def _print_objects(objs, sort, long, formatters, level):
+  "Print the selected objects"
+  if formatters is None:
+    formatters = []
+  if sort:
+    objs.sort(key=lambda odef: (odef[0], odef[1], odef[2]))
+  for objdef in objs:
+    print_object(objdef, long=long, formatters=formatters, data_level=level)
+
 class ArgFormatter(argparse.RawDescriptionHelpFormatter):
   "Replacement argparse formatter class"
 
-  def is_append_action(self, action):
+  def is_append_action(self, action): # pylint: disable=no-self-use
     "Hack to determine if the action is append"
     try:
       for cls in action.__class__.mro():
@@ -530,20 +563,21 @@ The following arguments support simple glob patterns via fnmatch:
   {L}           include crop forage and fertilizer
   {F}           include crop phase, yield, and harvest count
 
-Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
+Pass -v once for verbose logging or twice (or -vv) for trace logging.
 """.format(B=OUT_BRIEF, N=OUT_NORMAL, L=OUT_LONG, F=OUT_FULL),
       formatter_class=ArgFormatter)
   ag = ap.add_argument_group("farm selection")
   ag.add_argument("farm", nargs="?", help="farm name (see below)")
   ag.add_argument("--list", action="store_true",
       help="list available save files")
-  ag.add_argument("-P", "--save-path", default=SVPATH,
+  ag.add_argument("-P", "--save-path", default=SVPATH, metavar="PATH",
       help="path to saves")
   ag = ap.add_argument_group("object enumeration")
   ag.add_argument("-i", "--include", action="append",
       choices=MAP_ITEM_TYPES.keys(),
       help=f"get specific things")
   ag.add_argument("-n", "--name", action="append", metavar="NAME",
+      dest="names",
       help="select objects based on name")
   ag = ap.add_argument_group("output configuration")
   ag.add_argument("-c", "--count", action="store_true",
@@ -551,19 +585,21 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
   ag.add_argument("-s", "--sort", action="store_true",
       help="sort output where possible")
   ag.add_argument("-l", "--info-level", type=int, default=OUT_BRIEF,
-      choices=range(OUT_FULL+1),
+      choices=OUT_LEVELS,
       help="amount of crop information to display")
   ag = ap.add_argument_group("output filtering")
   ag.add_argument("-m", "--map", action="append", metavar="MAP",
+      dest="maps",
       help="limit to specific maps")
   ag.add_argument("-t", "--type", action="append", metavar="TYPE",
+      dest="types",
       help="limit to particular classes")
   ag.add_argument("-C", "--category", action="append",
-      choices=VALID_CATEGORIES,
+      choices=VALID_CATEGORIES, dest="categories",
       help="limit to specific categories of objects")
-  ag = ap.add_argument_group("XML output configuration")
+  ag = ap.add_argument_group("detailed output configuration")
   ag.add_argument("-L", "--long", action="store_true",
-      help="display long-form object information")
+      help="display detailed long-form object information")
   ag.add_argument("-F", "--formatter", action="append",
       choices=VALID_FORMATTERS,
       help="apply specific formatter(s) on long-form output")
@@ -578,8 +614,8 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
     logger.setLevel(logging.DEBUG)
     xmltools.getLogger().setLevel(logging.DEBUG)
   elif args.verbose == 2:
-    logger.setLevel(logging.TRACE)
-    xmltools.getLogger().setLevel(logging.TRACE)
+    logger.setLevel(utility.tracelog.TRACE)
+    xmltools.getLogger().setLevel(utility.tracelog.TRACE)
   if args.no_color:
     C.disable()
 
@@ -587,57 +623,30 @@ Pass -v to enable verbose logging. Pass -v twice (or -vv) for trace logging.
   logger.debug("LOCATIONS: %d", len(stardew.LOCATIONS))
   logger.debug("OBJECTS: %d", len(stardew.OBJECTS))
 
-  if args.list:
-    for savename in os.listdir(args.save_path):
-      savepath = os.path.join(args.save_path, savename)
-      savefile = os.path.join(savepath, savename)
-      if os.path.isdir(savepath) and os.path.exists(savefile):
-        print(os.path.join(savepath, savename))
-    raise SystemExit(0)
-
   if args.farm:
     savepath = deduce_save_file(args.farm, svpath=args.save_path)
     if not savepath or not os.path.exists(savepath):
-      ap.error("Failed to find farm")
+      ap.error("Failed to find farm matching {!r}".format(args.farm))
   else:
-    ap.print_usage()
+    if args.list:
+      _print_saves(args.save_path)
+    else:
+      sys.stderr.write("No farm specified; see --help for usage\n")
     raise SystemExit(0)
 
   root = load_save_file(savepath)
 
-  feature_kinds = MAP_OBJECTS
-  if args.include is not None:
-    given_kinds = set()
-    for want_kind in args.include:
-      given_kinds.update(MAP_ITEM_TYPES[want_kind].split("+"))
-    feature_kinds = "+".join(given_kinds)
-
-  mapnames = args.map if args.map else []
-  objnames = args.name if args.name else []
-  objtypes = args.type if args.type else []
-  objcats = args.category if args.category else []
   objs = list(get_all_objects(root,
-    mapnames=mapnames,
-    objnames=objnames,
-    objtypes=objtypes,
-    objcats=objcats,
-    features=feature_kinds))
+    mapnames=args.maps,
+    objnames=args.names,
+    objtypes=args.types,
+    objcats=args.categories,
+    features=_deduce_feature_kinds(args.include)))
 
   if args.count:
-    prefix = "overall"
-    if args.map:
-      prefix = "+".join(args.map)
-    for objname, objcount in get_object_counts(objs, sort=args.sort):
-      prefix = C(C.GRN, prefix)
-      objname = C(C.CYN, objname)
-      print("{} {} {}".format(prefix, objname, objcount))
+    _print_counts(objs, args.maps, args.sort)
   else:
-    formatters = args.formatter if args.formatter else []
-    if args.sort:
-      objs.sort(key=lambda odef: (odef[0], odef[1], odef[2]))
-    for objdef in objs:
-      print_object(objdef, long=args.long, formatters=formatters,
-          data_level=args.info_level)
+    _print_objects(objs, args.sort, args.long, args.formatter, args.info_level)
 
 if __name__ == "__main__":
   main()
