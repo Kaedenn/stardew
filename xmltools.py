@@ -74,6 +74,7 @@ def findChildrenNodes(node, tag, ignorecase=False, first=True):
     "True if the node has the above tag"
     if cnode.nodeType != minidom.Element.TEXT_NODE:
       return hasTag(cnode, tag, ignorecase=ignorecase)
+
   yield from findChildren(node, matcher, first=first)
 
 def descend(node, slashed_path, ignorecase=False):
@@ -89,7 +90,7 @@ def descend(node, slashed_path, ignorecase=False):
   return None
 
 def descendAll(node, slashed_path, ignorecase=False):
-  "Like descend(), but return all matching nodes"
+  "Like descend(), but return all matching nodes at all levels"
   head, tail = slashed_path, ""
   if "/" in slashed_path:
     head, tail = slashed_path.split("/", 1)
