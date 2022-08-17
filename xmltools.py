@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=invalid-name
 
 """
 Various XML helpers
@@ -6,8 +7,6 @@ Various XML helpers
 
 import collections
 import logging
-import os
-import sys
 import xml.dom.minidom as minidom
 
 def getLogger():
@@ -74,6 +73,7 @@ def findChildrenNodes(node, tag, ignorecase=False, first=True):
     "True if the node has the above tag"
     if cnode.nodeType != minidom.Element.TEXT_NODE:
       return hasTag(cnode, tag, ignorecase=ignorecase)
+    return False
 
   yield from findChildren(node, matcher, first=first)
 
@@ -100,6 +100,26 @@ def descendAll(node, slashed_path, ignorecase=False):
       yield from descendAll(cnode, tail, ignorecase=ignorecase)
     else:
       yield cnode
+
+def walk(root, visitor=None):
+  """Preorder descent over the entire tree
+
+  Descent happens if the visitor function returns True or, if visitor is None,
+  xmltools.isTextNode(node) is False.
+  """
+  if visitor:
+    visit_func = visitor
+  else:
+    def visit_func(node):
+      "Default visitor function if none is given"
+      if isTextNode(node):
+        return False
+      return True
+
+  for cnode in getNodeChildren(root):
+    yield cnode
+    if visit_func(cnode):
+      yield from walk(cnode, visitor=visit_func)
 
 def getNodeText(node):
   "Get the text of a node containing only text"
