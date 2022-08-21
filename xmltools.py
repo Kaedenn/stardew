@@ -140,24 +140,12 @@ def isTextNode(node):
     return False
   return True
 
-def isCoordNode(node): # XXX: move to savefile.py
-  "True if the node just has two children: 'X' and 'Y'"
-  cnames = [cnode.nodeName for cnode in getNodeChildren(node)]
-  if set(cnames) == set(("X", "Y")):
-    return True
-  return False
-
-def nodeToCoord(node): # XXX: move to savefile.py
-  "Convert a coordinate node to a coordinate pair"
-  if node:
-    xnode = getNodeChild(node, "X")
-    ynode = getNodeChild(node, "Y")
-    if xnode and ynode:
-      return getNodeText(xnode), getNodeText(ynode)
-  return None, None
-
-def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
+def dumpNodeRec(node, mapFunc=None, xformFunc=False):
   """Interpret XML as a Python dict
+
+  xformFunc, if specified, will be called on the initial node. Default parsing
+  happens only if this function returns None. Any other value will be treated
+  as that node's final value.
 
   mapFunc, if specified, will be called on the resulting Python type.
   """
@@ -168,6 +156,11 @@ def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
 
   key = node.nodeName
   results = collections.defaultdict(dict)
+  if xformFunc:
+    xformValue = xformFunc(node)
+    if xformValue is not None:
+      return {key: xformValue}
+
   if isTextNode(node):
     # unfortunately, attributes in plain text nodes are ignored
     value = doMapFunc(key, getNodeText(node))
@@ -177,11 +170,9 @@ def dumpNodeRec(node, mapFunc=None, interpretPoints=False):
       results[key] = False
     elif value is not None:
       results[key] = value
-  elif isCoordNode(node) and interpretPoints:
-    results[key] = doMapFunc(key, nodeToCoord(node))
   else:
     for cnode in getNodeChildren(node):
-      rawval = dumpNodeRec(cnode, mapFunc=mapFunc, interpretPoints=interpretPoints)
+      rawval = dumpNodeRec(cnode, mapFunc=mapFunc, xformFunc=xformFunc)
       value = doMapFunc(key, rawval)
       if value is not None:
         results[key].update(value)

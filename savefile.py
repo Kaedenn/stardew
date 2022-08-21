@@ -11,7 +11,6 @@ import functools
 import json
 import logging
 import os
-import platform
 import sys
 import xml.dom.minidom as minidom
 
@@ -22,20 +21,13 @@ import xmltools
 
 import utility.tracelog
 
-def get_data_dir():
-  "Find the directory containing the StardewValley folder"
-  home_config = os.path.expanduser("~/.config")
-  if platform.system() == "Linux":
-    return os.environ.get("XDG_DATA_DIR", home_config)
-  if platform.system() == "Windows":
-    return os.environ.get("APPDATA")
-  sys.stderr.write("WARNING: Unable to determine save path for your OS\n")
-  sys.stderr.write("WARNING: Defaulting to {home_config}\n")
-  return home_config
+SVPATH = os.path.join(stardew.get_game_dir(), "Saves")
 
-SVPATH = os.path.join(get_data_dir(), "StardewValley/Saves")
-
-VALID_CATEGORIES = ("forage", "artifact", "crops")
+VALID_CATEGORIES = (
+  "forage",
+  "artifact",
+  "crops"
+)
 
 MAP_OBJECTS = "objects"
 MAP_FEATS_SMALL = "small"
@@ -63,7 +55,7 @@ OUT_LONG = 2
 OUT_FULL = 3
 OUT_LEVELS = (OUT_BRIEF, OUT_NORMAL, OUT_LONG, OUT_FULL)
 
-# For long-form output
+# For long-form output (FIXME: remove crops)
 VALID_FORMATTERS = ("false", "zero", "points", "crops")
 
 utility.tracelog.hotpatch(logging)
@@ -141,6 +133,27 @@ def is_nil_node(node):
       return True
   return False
 
+def is_coord_node(node):
+  "True if the node is an X, Y location"
+  if xmltools.isTextNode(node):
+    return False
+  if set(xmltools.getNodeChildren(node, names_only=True)) == set(("X", "Y")):
+    return True
+  return False
+
+def node_to_coord(node):
+  "Convert a Vector2 node to a pair of points"
+  if is_coord_node(node):
+    xnode = xmltools.getNodeChild(node, "X")
+    ynode = xmltools.getNodeChild(node, "Y")
+    xvalue = xmltools.getNodeText(xnode)
+    yvalue = xmltools.getNodeText(ynode)
+    if isdigit(xvalue) and isdigit(yvalue):
+      xvalue = int(xvalue)
+      yvalue = int(yvalue)
+    return xvalue, yvalue
+  return None
+
 def get_locations(root):
   "Get all map locations"
   for gloc in root.getElementsByTagName("GameLocation"):
@@ -151,29 +164,37 @@ def get_locations(root):
       logger.warning("Unknown game location %s", mapname)
     yield mapname, gloc
 
+def get_location(root, name):
+  "Get a named location, for convenience"
+  for lname, loc in get_locations(root):
+    if lname == name:
+      return loc
+  logger.warning("Failed to find location named %r", name)
+  return None
+
 def map_get_objects(melem):
   "Get objects within a game location"
   for node in melem.getElementsByTagName("Object"):
     if not is_nil_node(node):
       oname = get_obj_name(node)
-      objpos = xmltools.nodeToCoord(xmltools.getNodeChild(node, "tileLocation"))
+      objpos = node_to_coord(xmltools.getNodeChild(node, "tileLocation"))
       yield oname, objpos, node
 
 def map_get_features(melem, large=False):
   "Get terrain features within a game location"
   small_node = xmltools.getNodeChild(melem, "terrainFeatures")
-  large_node = xmltools.getNodeChild(melem, "largeTerrainFeatures")
   for node in xmltools.getNodeChildren(small_node):
     if not is_nil_node(node):
       knode = xmltools.descend(node, "key/Vector2")
       fnode = xmltools.descend(node, "value/TerrainFeature")
       fname = get_obj_name(fnode)
-      fpos = xmltools.nodeToCoord(knode)
+      fpos = node_to_coord(knode)
       yield fname, fpos, fnode
   if large:
+    large_node = xmltools.getNodeChild(melem, "largeTerrainFeatures")
     for node in xmltools.getNodeChildren(large_node):
       fname = get_obj_name(node)
-      fpos = xmltools.nodeToCoord(xmltools.descend(node, "tilePosition"))
+      fpos = node_to_coord(xmltools.descend(node, "tilePosition"))
       yield fname, fpos, node
 
 def get_objects(root):
@@ -203,6 +224,15 @@ def get_obj_type(node):
     return xmltools.getNodeText(xmltools.getNodeChild(node, "type"))
   return get_obj_name(node)
 
+def obj_get_map(node):
+  "Get the map location containing the given object"
+  pnode = node.parentNode
+  while pnode:
+    if pnode.tagName == "GameLocation":
+      return get_obj_name(pnode)
+    pnode = pnode.parentNode
+  return None
+
 def is_crop(node):
   "True if the node is a non-empty HoeDirt"
   if get_obj_type(node) == "HoeDirt":
@@ -225,6 +255,13 @@ def node_to_dict(objnode, formatters=()):
   filter_false = ("false" in formatters)
   filter_zero = ("zero" in formatters)
   filter_points = ("points" in formatters)
+
+  def transform_func(node):
+    "Apply a transformation on a single node"
+    if filter_points:
+      if is_coord_node(node):
+        return node_to_coord(node)
+    return None
 
   def map_func(key, value):
     orig_val = value
@@ -258,7 +295,7 @@ def node_to_dict(objnode, formatters=()):
 
   return xmltools.dumpNodeRec(objnode,
       mapFunc=map_func,
-      interpretPoints=filter_points)
+      xformFunc=transform_func)
 
 def node_to_json(objnode, formatters=()):
   "Convert an XML node to JSON (crudely)"
@@ -330,19 +367,18 @@ def print_crop(objdef, data_level=OUT_BRIEF):
 def print_object(objdef, long=False, formatters=(), data_level=OUT_BRIEF):
   "Print a 4-tuple object"
   mapname, objname, objpos, objnode = objdef
-  format_crop = ("crops" in formatters)
-  if not long:
-    if format_crop and is_crop(objnode):
-      print_crop(objdef, data_level=data_level)
-    else:
-      mapname = C(C.GRN, mapname)
-      objname = C(C.CYN, C.BOLD, objname)
-      objx = C(C.BOLD, f"{objpos[0]}")
-      objy = C(C.BOLD, f"{objpos[1]}")
-      # TODO: adjust based on data_level level
-      print("{} {} at ({}, {})".format(mapname, objname, objx, objy))
-  else:
+  format_crop = ("crops" in formatters) # FIXME: remove this
+  if long:
     print(node_to_json(objnode, formatters=formatters))
+  elif format_crop and is_crop(objnode):
+    print_crop(objdef, data_level=data_level)
+  else:
+    mapname = C(C.GRN, mapname)
+    objname = C(C.CYN, C.BOLD, objname)
+    objx = C(C.BOLD, f"{objpos[0]}")
+    objy = C(C.BOLD, f"{objpos[1]}")
+    # TODO: adjust based on data_level level
+    print("{} {} at ({}, {})".format(mapname, objname, objx, objy))
 
 def matches(seq, term):
   "True if seq includes term, False if seq forbids term, None otherwise"
@@ -356,8 +392,7 @@ def matches(seq, term):
       return True
   return None
 
-def get_all_objects(root, mapnames, objnames, objtypes, objcats,
-    features=MAP_OBJECTS):
+def get_all_objects(root, mapnames, objnames, objtypes, objcats, kinds):
   "Get all objects (as 4-tuples) matching any of the given conditions"
 
   def update_show(new_show, curr_show):
@@ -381,7 +416,7 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
 
   def get_things():
     "Get the selected things"
-    things = features.split("+")
+    things = kinds.split("+")
     if MAP_OBJECTS in things:
       logger.debug("Selecting objects")
       for mname, oname, opos, obj in get_objects(root):
@@ -401,7 +436,7 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats,
         yield MAP_FEATS_LARGE, mname, oname, opos, obj
 
   for kind, mname, oname, opos, obj in get_things():
-    show = None # tri-bool
+    show = None # tri-bool: False, unset, True
 
     # maps are exclusive
     if mapnames and not matches(mapnames, mname):
@@ -557,6 +592,16 @@ The following arguments support simple glob patterns via fnmatch:
   features    both small and large terrain features
   all         objects and terrain features
 
+-C,--category accepts the following values:
+  forage      forageables
+  artifact    artifact spots (equivalent to -n "Artifact Spot")
+  crops       HoeDirt tile features with a crop or fertilizer present
+
+-F,--formatter applies transformation to the output of -L,--long:
+  false       omit elements with value "false"
+  zero        omit elements with value "0"
+  points      transform "X", "Y" to pairs of numbers
+
 --info-level expects a number between {B} and {F} inclusive:
   {B}           include dead and ready
   {N}           include crop seasons
@@ -575,7 +620,10 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
   ag = ap.add_argument_group("object enumeration")
   ag.add_argument("-i", "--include", action="append",
       choices=MAP_ITEM_TYPES.keys(),
-      help=f"get specific things")
+      help="things to display")
+  ag.add_argument("-C", "--category", action="append",
+      choices=VALID_CATEGORIES, dest="categories",
+      help="categories of objects to show")
   ag.add_argument("-n", "--name", action="append", metavar="NAME",
       dest="names",
       help="select objects based on name")
@@ -585,7 +633,7 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
   ag.add_argument("-s", "--sort", action="store_true",
       help="sort output where possible")
   ag.add_argument("-l", "--info-level", type=int, default=OUT_BRIEF,
-      choices=OUT_LEVELS,
+      choices=OUT_LEVELS, dest="level",
       help="amount of crop information to display")
   ag = ap.add_argument_group("output filtering")
   ag.add_argument("-m", "--map", action="append", metavar="MAP",
@@ -594,14 +642,12 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
   ag.add_argument("-t", "--type", action="append", metavar="TYPE",
       dest="types",
       help="limit to particular classes")
-  ag.add_argument("-C", "--category", action="append",
-      choices=VALID_CATEGORIES, dest="categories",
-      help="limit to specific categories of objects")
   ag = ap.add_argument_group("detailed output configuration")
   ag.add_argument("-L", "--long", action="store_true",
       help="display detailed long-form object information")
-  ag.add_argument("-F", "--formatter", action="append",
+  ag.add_argument("-F", "--formatter", action="append", metavar="FORMATTER",
       choices=VALID_FORMATTERS,
+      dest="formatters",
       help="apply specific formatter(s) on long-form output")
   ag = ap.add_argument_group("logging and diagnostics")
   ag.add_argument("--no-color", action="store_true",
@@ -613,15 +659,11 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
   if args.verbose == 1:
     logger.setLevel(logging.DEBUG)
     xmltools.getLogger().setLevel(logging.DEBUG)
-  elif args.verbose == 2:
+  elif args.verbose >= 2:
     logger.setLevel(utility.tracelog.TRACE)
     xmltools.getLogger().setLevel(utility.tracelog.TRACE)
   if args.no_color:
     C.disable()
-
-  logger.debug("NPCS: %d", len(stardew.NPCS))
-  logger.debug("LOCATIONS: %d", len(stardew.LOCATIONS))
-  logger.debug("OBJECTS: %d", len(stardew.OBJECTS))
 
   if args.farm:
     savepath = deduce_save_file(args.farm, svpath=args.save_path)
@@ -641,12 +683,12 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
     objnames=args.names,
     objtypes=args.types,
     objcats=args.categories,
-    features=_deduce_feature_kinds(args.include)))
+    kinds=_deduce_feature_kinds(args.include)))
 
   if args.count:
     _print_counts(objs, args.maps, args.sort)
   else:
-    _print_objects(objs, args.sort, args.long, args.formatter, args.info_level)
+    _print_objects(objs, args.sort, args.long, args.formatters, args.level)
 
 if __name__ == "__main__":
   main()
