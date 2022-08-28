@@ -44,7 +44,22 @@ You can specify your save file by name, filename, or path. For instance, I have 
 
 `python savefile.py ~/.config/StardewValley/Saves/Haven_316643857 <arguments>`
 
+## Pattern matching
+
+The following arguments accept crude glob-like patterns: `-n,--name`, `-m,--map`, and `-t,--type`.
+
+These patterns support two special symbols: `*` which matches zero or more characters, and a leading `!` which negates the match. For example,
+
+* `-m Farm` limits output to things on the farm
+* `-m '!Farm'` limits output to things anywhere except the farm
+* `-m 'Island*' -m '!IslandWest'` limits output to things on the island, except for the island farm
+* `-n '*Sprinkler'` limits output to any type of sprinkler
+
+The single-quotes `''` around `!` are required if using a shell with history substitution, like bash. The single-quotes are required around `*` to avoid filename glob expansion.
+
 ## Output selection
+
+Select output types using the `-i,--include` argument.
 
 ### Objects
 
@@ -60,29 +75,46 @@ TODO
 
 ### Crops
 
-This includes every instance of the `HoeDirt` terrain feature with a `<crop>` child element present.
+This includes every `HoeDirt` terrain feature with a `<crop>` child element present.
 
 TODO
 
 ### Trees (and fruit trees)
 
-This includes every instance of either the `Tree` or the `FruitTree` terrain features.
+This includes every `Tree` or `FruitTree` terrain feature.
 
 TODO
 
 ### Animals
 
-This includes every instance of `FarmAnimal` within a building.
+This includes all `FarmAnimal`s within a building interior.
 
 TODO
 
 ### Slimes
 
-This includes every slime within the Slime Hutch building.
+This includes slimes within the Slime Hutch buildings.
 
 TODO
 
 ## Output filtering
+
+Filter results using the `-C,--category`, `-n,--name`, `-m,--map`, and `-t,--type`.
+
+For convenience, certain `-C,--category` values will automatically add their necessary `-i,--include` value:
+
+| `-C` argument   | `-i` argument |
+| --------------- | ------------- |
+| `-C forage`     | `-i object`   |
+| `-C artifact`   | `-i object`   |
+| `-C cropready`  | `-i crops`    |
+| `-C cropdead`   | `-i crops`    |
+| `-C nofert`     | `-i crops`    |
+| `-C fertnocrop` | `-i small`    |
+
+Therefore, specifying `-C forage` will act as if you specified `-C forage -i object`.
+
+For a list of supported maps, see `data/locations.txt`.
 
 ## Long-form output
 
