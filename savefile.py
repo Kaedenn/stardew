@@ -23,45 +23,98 @@ import utility.tracelog
 
 SVPATH = os.path.join(stardew.get_game_dir(), "Saves")
 
-VALID_CATEGORIES = (
+CATEGORIES = (
   "forage",
   "artifact",
-  "crops"
+  "cropready",
+  "cropdead",
+  "nofert",
+  "fertnocrop"
 )
 
 MAP_OBJECTS = "objects"
 MAP_FEATS_SMALL = "small"
 MAP_FEATS_LARGE = "large"
-MAP_FEATS_CROPS = "crops"
+MAP_CROPS = "crops"
+MAP_TREES = "trees"
+MAP_FRUIT_TREES = "fruittrees"
+MAP_ANIMALS = "animals"
+MAP_SLIMES = "slimes"
 
 MAP_ITEM_TYPES = {
-  "objects": MAP_OBJECTS,
-  "small": MAP_FEATS_SMALL,
-  "large": MAP_FEATS_LARGE,
-  "crops": MAP_FEATS_CROPS,
+  MAP_OBJECTS: MAP_OBJECTS,
+  MAP_FEATS_SMALL: MAP_FEATS_SMALL,
+  MAP_FEATS_LARGE: MAP_FEATS_LARGE,
+  MAP_CROPS: MAP_CROPS,
+  MAP_TREES: MAP_TREES,
+  MAP_FRUIT_TREES: MAP_FRUIT_TREES,
+  MAP_ANIMALS: MAP_ANIMALS,
+  MAP_SLIMES: MAP_SLIMES,
+  "alltrees": "+".join((MAP_TREES, MAP_FRUIT_TREES)),
   "features": "+".join((MAP_FEATS_SMALL, MAP_FEATS_LARGE)),
-  "all": "+".join((MAP_OBJECTS, MAP_FEATS_SMALL, MAP_FEATS_LARGE)),
+  "all": "+".join((
+    MAP_OBJECTS,
+    MAP_CROPS,
+    MAP_FEATS_SMALL,
+    MAP_FEATS_LARGE,
+    MAP_TREES,
+    MAP_FRUIT_TREES
+  )),
 }
 
-MAP_OBJ_VALUES = (
-  MAP_OBJECTS,
-  MAP_FEATS_SMALL,
-  MAP_FEATS_LARGE
-)
+CROP_BRIEF = 0
+CROP_NORMAL = 1
+CROP_LONG = 2
+CROP_FULL = 3
+CROP_LEVELS = {
+  "brief": CROP_BRIEF,
+  "normal": CROP_NORMAL,
+  "long": CROP_LONG,
+  "full": CROP_FULL
+}
 
-OUT_BRIEF = 0
-OUT_NORMAL = 1
-OUT_LONG = 2
-OUT_FULL = 3
-OUT_LEVELS = (OUT_BRIEF, OUT_NORMAL, OUT_LONG, OUT_FULL)
-
-# For long-form output (FIXME: remove crops)
-VALID_FORMATTERS = ("false", "zero", "points", "crops")
+# For long-form output
+FORMATTERS = ("false", "zero", "points")
 
 utility.tracelog.hotpatch(logging)
 logging.basicConfig(format="%(module)s:%(lineno)s: %(levelname)s: %(message)s",
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class MapEntry:
+  "Abstraction of a thing with an X, Y location"
+  def __init__(self, kind, mapname, objname, objpos, objnode):
+    "Constructor"
+    self._kind = kind
+    self._mapname = mapname
+    self._objname = objname
+    self._objpos = objpos
+    self._objnode = objnode
+
+  @property
+  def kind(self):
+    "What kind of thing are we looking at?"
+    return self._kind
+
+  @property
+  def map(self):
+    "What map is this thing on?"
+    return self._mapname
+
+  @property
+  def name(self):
+    "What is this thing's name?"
+    return self._objname
+
+  @property
+  def pos(self):
+    "Where is this thing, in tile coordinates?"
+    return self._objpos
+
+  @property
+  def node(self):
+    "The underlying XML node"
+    return self._objnode
 
 def isdigit(value):
   "True if value is an integer"
@@ -172,7 +225,7 @@ def get_location(root, name):
   logger.warning("Failed to find location named %r", name)
   return None
 
-def map_get_objects(melem):
+def map_get_objects(melem): # TODO: merge into get_objects()?
   "Get objects within a game location"
   for node in melem.getElementsByTagName("Object"):
     if not is_nil_node(node):
@@ -180,7 +233,7 @@ def map_get_objects(melem):
       objpos = node_to_coord(xmltools.getNodeChild(node, "tileLocation"))
       yield oname, objpos, node
 
-def map_get_features(melem, large=False):
+def map_get_features(melem, large=False): # TODO: merge into get_features()?
   "Get terrain features within a game location"
   small_node = xmltools.getNodeChild(melem, "terrainFeatures")
   for node in xmltools.getNodeChildren(small_node):
@@ -208,6 +261,28 @@ def get_features(root, large=False):
   for mapname, gloc in get_locations(root):
     for fname, fpos, node in map_get_features(gloc, large=large):
       yield mapname, fname, fpos, node
+
+def get_trees(root, fruit=False):
+  "Get trees (or fruit trees)"
+  return ()
+
+def get_animals(root):
+  "Get livestock"
+  bpath = "buildings/Building/indoors"
+  apath = "animals/item/value/FarmAnimal"
+  # modding decision: allow buildings on maps other than Farm
+  for mapname, gloc in get_locations(root):
+    for bldg in xmltools.descendAll(gloc, bpath):
+      btype = bldg.getAttribute("xsi:type")
+      logger.debug("Examining building %s", btype)
+      for anode in xmltools.descendAll(bldg, apath):
+        atype = xmltools.getChildText(anode, "type")
+        apos = node_to_coord(xmltools.getNodeChild(anode, "homeLocation"))
+        yield mapname, atype, apos, anode
+
+def get_slimes(root):
+  "Get slimes within slime hutches"
+  return ()
 
 def get_obj_name(node):
   "Get an object's name"
@@ -245,16 +320,16 @@ def is_crop(node):
 def aggregate_objects(objlist):
   "Aggregate an interable of 4-tuples"
   bymap = collections.defaultdict(dict)
-  for mapname, objname, objpos, obj in objlist:
-    mcount = bymap[mapname].get(objname, 0)
-    bymap[mapname][objname] = mcount + 1
+  for objdef in objlist:
+    mcount = bymap[objdef.map].get(objdef.name, 0)
+    bymap[objdef.map][objdef.name] = mcount + 1
   return bymap
 
-def node_to_dict(objnode, formatters=()):
+def node_to_dict(objnode, formatters=None):
   "Convert an XML node to a Python dictionary (crudely)"
-  filter_false = ("false" in formatters)
-  filter_zero = ("zero" in formatters)
-  filter_points = ("points" in formatters)
+  filter_false = formatters and "false" in formatters
+  filter_zero = formatters and "zero" in formatters
+  filter_points = formatters and "points" in formatters
 
   def transform_func(node):
     "Apply a transformation on a single node"
@@ -297,19 +372,69 @@ def node_to_dict(objnode, formatters=()):
       mapFunc=map_func,
       xformFunc=transform_func)
 
-def node_to_json(objnode, formatters=()):
+def node_to_json(objnode, formatters=None):
   "Convert an XML node to JSON (crudely)"
   data = node_to_dict(objnode, formatters=formatters)
   return json.dumps(data, indent=2, sort_keys=True)
 
-def print_crop(objdef, data_level=OUT_BRIEF):
+def crop_get_seed(node, name=False):
+  "Get the crop's seed ID. Returns the name instead if name is True"
+  cnode = xmltools.descend(node, "crop/seedIndex")
+  if cnode is not None:
+    cropid = xmltools.getNodeText(cnode)
+    if name:
+      return stardew.get_object(cropid, field=D.NAME)
+    return cropid
+  return None
+
+def crop_get_produce(node, name=False):
+  "Get the crop's produce by item ID or name"
+  cnode = xmltools.descend(node, "crop/indexOfHarvest")
+  if cnode is not None:
+    produce = xmltools.getNodeText(cnode)
+    if name:
+      return stardew.get_object(produce, field=D.NAME)
+    return produce
+  return None
+
+def crop_is_ready(node): # FIXME: faulty logic
+  "True if the crop is ready for harvest"
+  #cnode = xmltools.descend(node, "crop/fullGrown")
+  #if cnode is not None:
+  #  grown = xmltools.getNodeText(cnode)
+  #  if grown == "true":
+  #    return True
+  #  return False
+  return None
+
+def crop_is_dead(node):
+  "True if the crop is dead"
+  cnode = xmltools.descend(node, "crop/dead")
+  if cnode is not None:
+    dead = xmltools.getNodeText(cnode)
+    if dead == "true":
+      return True
+    return False
+  return None
+
+def feature_get_fertilizer(node, name=False):
+  "Get the fertilizer ID or name"
+  if xmltools.nodeHasChild(node, "fertilizer"):
+    cnode = xmltools.getNodeChild(node, "fertilizer")
+    if xmltools.isTextNode(cnode):
+      fertid = xmltools.getNodeText(cnode)
+      if name:
+        return stardew.get_object(fertid, field=D.NAME)
+      return fertid
+  return None
+
+def print_crop(objdef, crop_level=CROP_BRIEF):
   "Print a 4-tuple object representing a crop"
-  mapname, objname, objpos, objnode = objdef
-  feature = node_to_dict(objnode)
+  feature = node_to_dict(objdef.node)
   if "TerrainFeature" in feature:
     feature = feature["TerrainFeature"]
   else:
-    logger.error("Malformed feature %r", feature)
+    logger.error("Malformed feature %r; trying to recover...", feature)
   crop = feature["crop"]
   cropname = stardew.get_object(crop["seedIndex"], field=D.NAME)
   fertilizer = feature["fertilizer"]
@@ -324,12 +449,12 @@ def print_crop(objdef, data_level=OUT_BRIEF):
   if crop.get("fullGrown"):
     labels.append(C(C.GRN, C.BOLD, "ready"))
 
-  if data_level >= OUT_NORMAL:
+  if crop_level >= CROP_NORMAL:
     if fertilizer == 0:
       labels.append(C(C.RED, "unfertilized"))
 
   # TODO: color appropriately
-  if data_level >= OUT_LONG:
+  if crop_level >= CROP_LONG:
     if fertilizer > 0:
       labels.append(C(C.ITAL, stardew.get_object(fertilizer, field=D.NAME)))
     if crop.get("seasonsToGrowIn"):
@@ -345,7 +470,7 @@ def print_crop(objdef, data_level=OUT_BRIEF):
       notes.append(f"extra={chance}%")
 
   # TODO: color appropriately
-  if data_level >= OUT_FULL:
+  if crop_level >= CROP_FULL:
     phase = int(crop["currentPhase"])
     phase_day = crop.get("dayOfCurrentPhase", "?")
     min_harvest = int(crop["minHarvest"])
@@ -357,40 +482,133 @@ def print_crop(objdef, data_level=OUT_BRIEF):
       notes.append(f"yield={min_harvest} to {max_harvest}")
 
   print("{} {} at ({}, {}) {} {}".format(
-    C(C.GRN, mapname),
+    C(C.GRN, objdef.map),
     C(C.CYN, C.BOLD, cropname),
-    C(C.BOLD, f"{objpos[0]}"),
-    C(C.BOLD, f"{objpos[1]}"),
+    C(C.BOLD, f"{objdef.pos[0]}"),
+    C(C.BOLD, f"{objdef.pos[1]}"),
     " ".join(labels),
     "; ".join(notes)).replace("  ", " ").strip())
 
-def print_object(objdef, long=False, formatters=(), data_level=OUT_BRIEF):
-  "Print a 4-tuple object"
-  mapname, objname, objpos, objnode = objdef
-  format_crop = ("crops" in formatters) # FIXME: remove this
+def print_animal(objdef): # TODO: formatting arguments
+  "Print an animal"
+  objkind = objdef.kind
+  mapname = objdef.map
+  objname = objdef.name
+  objpos = objdef.pos
+  objnode = objdef.node
+
+  aname = xmltools.getChildText(objnode, "name")
+  age = xmltools.getChildText(objnode, "age")
+  love = xmltools.getChildText(objnode, "friendshipTowardFarmer")
+  joy = xmltools.getChildText(objnode, "happiness")
+
+  print("{} {} \"{}\" at ({}, {}) {}y {}m love {} joy {}".format(
+    C(C.GRN, mapname),
+    C(C.CYN, C.BOLD, objname),
+    C(C.CYN, C.BOLD, C.ITAL, aname),
+    C(C.BOLD, f"{objpos[0]}"),
+    C(C.BOLD, f"{objpos[1]}"),
+    C(C.BLU_B, C.BOLD, f"{int(age)//12}"),
+    C(C.BLU_B, C.BOLD, f"{int(age)%12}"),
+    C(C.CYN, C.BOLD, love),
+    C(C.CYN, C.BOLD, joy)
+  ))
+
+def print_object(objdef, long=False, formatters=None, crop_level=CROP_BRIEF):
+  "Print an arbitrary map thing"
+  objkind = objdef.kind
+  mapname = objdef.map
+  objname = objdef.name
+  objpos = objdef.pos
+  objnode = objdef.node
+
   if long:
     print(node_to_json(objnode, formatters=formatters))
-  elif format_crop and is_crop(objnode):
-    print_crop(objdef, data_level=data_level)
+  elif objkind == MAP_CROPS and is_crop(objnode):
+    print_crop(objdef, crop_level=crop_level)
+  elif objkind == MAP_TREES:
+    pass
+  elif objkind == MAP_FRUIT_TREES:
+    pass
+  elif objkind == MAP_ANIMALS:
+    print_animal(objdef)
+  elif objkind == MAP_SLIMES:
+    pass
   else:
+    # TODO: add HoeDirt output (for fertilizer-no-crop)
     mapname = C(C.GRN, mapname)
     objname = C(C.CYN, C.BOLD, objname)
     objx = C(C.BOLD, f"{objpos[0]}")
     objy = C(C.BOLD, f"{objpos[1]}")
-    # TODO: adjust based on data_level level
     print("{} {} at ({}, {})".format(mapname, objname, objx, objy))
 
 def matches(seq, term):
   "True if seq includes term, False if seq forbids term, None otherwise"
+  match = None
   if not term or not seq:
     return None
   for item in seq:
-    if item.startswith("!") and fnmatch.fnmatch(item[1:], term):
-      return False
-  for item in seq:
-    if not item.startswith("!") and fnmatch.fnmatch(item, term):
-      return True
-  return None
+    if item.startswith("!") and fnmatch.fnmatch(term, item[1:]):
+      match = False
+    elif not item.startswith("!") and fnmatch.fnmatch(term, item):
+      match = True
+  return match
+
+def matches_map(mapnames, mapname):
+  "True if the map is included False if forbidden, None otherwise"
+  if not mapname or not mapnames:
+    return None
+  has_neg = any(x.startswith("!") for x in mapnames)
+  has_pos = any(not x.startswith("!") for x in mapnames)
+  match = matches(mapnames, mapname)
+  # exclusive logic changes what None maps to
+  if match is None:
+    if has_neg and not has_pos:
+      match = True
+    elif has_pos and not has_neg:
+      match = False
+  return match
+
+def get_map_things(root, things):
+  "Get the requested content; used by get_all_objects"
+  show_objs = MAP_OBJECTS in things
+  show_crops = MAP_CROPS in things
+  show_small = MAP_FEATS_SMALL in things
+  show_large = MAP_FEATS_LARGE in things
+  show_trees = MAP_TREES in things
+  show_fruit_trees = MAP_FRUIT_TREES in things
+  show_animals = MAP_ANIMALS in things
+  show_slimes = MAP_SLIMES in things
+
+  if show_objs:
+    logger.debug("Selecting objects")
+    for mname, oname, opos, obj in get_objects(root):
+      yield MAP_OBJECTS, mname, oname, opos, obj
+
+  if show_crops or show_small:
+    name = "crops" if show_crops else "small features"
+    logger.debug("Selecting %s", name)
+    for mname, oname, opos, obj in get_features(root, large=False):
+      if show_crops and is_crop(obj):
+        yield MAP_CROPS, mname, oname, opos, obj
+      if show_small:
+        yield MAP_FEATS_SMALL, mname, oname, opos, obj
+
+  if show_large:
+    logger.debug("Selecting large features")
+    for mname, oname, opos, obj in get_features(root, large=True):
+      yield MAP_FEATS_LARGE, mname, oname, opos, obj
+
+  if show_trees or show_fruit_trees:
+    logger.error("Not implemented yet")
+
+  if show_animals:
+    for mname, oname, opos, obj in get_animals(root):
+      logger.debug("Found animal %s %s %s %s", mname, oname, opos, obj)
+      yield MAP_ANIMALS, mname, oname, opos, obj
+
+  if show_slimes:
+    logger.error("Not implemented yet")
 
 def get_all_objects(root, mapnames, objnames, objtypes, objcats, kinds):
   "Get all objects (as 4-tuples) matching any of the given conditions"
@@ -414,32 +632,12 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats, kinds):
         new_show = True
     return update_show(new_show, curr_show)
 
-  def get_things():
-    "Get the selected things"
-    things = kinds.split("+")
-    if MAP_OBJECTS in things:
-      logger.debug("Selecting objects")
-      for mname, oname, opos, obj in get_objects(root):
-        yield MAP_OBJECTS, mname, oname, opos, obj
-    if MAP_FEATS_CROPS in things:
-      logger.debug("Selecting crop features")
-      for mname, oname, opos, obj in get_features(root, large=False):
-        if is_crop(obj):
-          yield MAP_FEATS_CROPS, mname, oname, opos, obj
-    elif MAP_FEATS_SMALL in things:
-      logger.debug("Selecting small features")
-      for mname, oname, opos, obj in get_features(root, large=False):
-        yield MAP_FEATS_SMALL, mname, oname, opos, obj
-    if MAP_FEATS_LARGE in things:
-      logger.debug("Selecting large features")
-      for mname, oname, opos, obj in get_features(root, large=True):
-        yield MAP_FEATS_LARGE, mname, oname, opos, obj
-
-  for kind, mname, oname, opos, obj in get_things():
+  things = kinds.split("+")
+  for kind, mname, oname, opos, obj in get_map_things(root, things):
     show = None # tri-bool: False, unset, True
 
-    # maps are exclusive
-    if mapnames and not matches(mapnames, mname):
+    # maps are exclusive and require special logic
+    if mapnames and matches_map(mapnames, mname) is False:
       show = False
 
     # everything else is inclusive
@@ -451,18 +649,36 @@ def get_all_objects(root, mapnames, objnames, objtypes, objcats, kinds):
           show = update_show(True, show)
         elif matches(objcats, "forage") and oname in stardew.FORAGE:
           show = update_show(True, show)
-      elif kind == MAP_FEATS_CROPS:
-        pass # TODO: implement
+      elif kind == MAP_CROPS:
+        show = test_show(objnames, crop_get_seed(obj, name=True), show)
+        if matches(objcats, "cropready") and crop_is_ready(obj):
+          show = update_show(True, show)
+        if matches(objcats, "cropdead") and crop_is_dead(obj):
+          show = update_show(True, show)
+        if matches(objcats, "nofert") and feature_get_fertilizer(obj) is None:
+          show = update_show(True, show)
+        # TODO: produce filtering
+        # TODO: fertilizer filtering
       elif kind == MAP_FEATS_SMALL:
-        pass # TODO: implement
+        if matches(objcats, "fertnocrop") and oname == "HoeDirt":
+          if not is_crop(obj) and feature_get_fertilizer(obj) != "0":
+            show = update_show(True, show)
       elif kind == MAP_FEATS_LARGE:
-        pass # TODO: implement
+        pass # TODO: filtering
+      elif kind == MAP_TREES:
+        pass # TODO: filtering
+      elif kind == MAP_FRUIT_TREES:
+        pass # TODO: filtering
+      elif kind == MAP_ANIMALS:
+        pass # TODO: filtering
+      elif kind == MAP_SLIMES:
+        pass # TODO: filtering
     elif show is None:
       # no specifications matches everything
       show = True
 
     if show is True:
-      yield mname, oname, opos, obj
+      yield MapEntry(kind, mname, oname, opos, obj)
 
 def get_object_counts(objs, mapname=None, sort=False):
   "Get aggregate object counts"
@@ -492,15 +708,29 @@ def get_object_counts(objs, mapname=None, sort=False):
     return entries
   return []
 
-def _deduce_feature_kinds(includes):
+def _deduce_feature_kinds(includes, categories):
   "Deduce what kinds of things the user wants to examine"
-  feature_kinds = MAP_OBJECTS
+  kinds = set()
   if includes:
-    given_kinds = set()
     for want_kind in includes:
-      given_kinds.update(MAP_ITEM_TYPES[want_kind].split("+"))
-    feature_kinds = "+".join(given_kinds)
-  return feature_kinds
+      kinds.update(MAP_ITEM_TYPES[want_kind].split("+"))
+  if categories:
+    if "forage" in categories and MAP_OBJECTS not in kinds:
+      kinds.add(MAP_OBJECTS)
+    if "artifact" in categories and MAP_OBJECTS not in kinds:
+      kinds.add(MAP_OBJECTS)
+    if "cropready" in categories and MAP_CROPS not in kinds:
+      kinds.add(MAP_CROPS)
+    if "cropdead" in categories and MAP_CROPS not in kinds:
+      kinds.add(MAP_CROPS)
+    if "nofert" in categories and MAP_CROPS not in kinds:
+      kinds.add(MAP_CROPS)
+    if "fertnocrop" in categories and MAP_FEATS_SMALL not in kinds:
+      kinds.add(MAP_FEATS_SMALL)
+  if not kinds:
+    # default to objects
+    kinds.add(MAP_OBJECTS)
+  return "+".join(kinds)
 
 def _print_saves(savepath):
   "Print a list of available saves"
@@ -511,6 +741,7 @@ def _print_saves(savepath):
 
 def _print_counts(objs, maps, sort):
   "Print aggregate counts"
+  # TODO: process crops as crops, not as terrain features
   prefix = "anywhere"
   if maps:
     prefix = "+".join(maps)
@@ -521,12 +752,12 @@ def _print_counts(objs, maps, sort):
 
 def _print_objects(objs, sort, long, formatters, level):
   "Print the selected objects"
-  if formatters is None:
-    formatters = []
   if sort:
-    objs.sort(key=lambda odef: (odef[0], odef[1], odef[2]))
+    def sort_key(odef):
+      return (odef.map, odef.name, odef.pos)
+    objs.sort(key=sort_key)
   for objdef in objs:
-    print_object(objdef, long=long, formatters=formatters, data_level=level)
+    print_object(objdef, long=long, formatters=formatters, crop_level=level)
 
 class ArgFormatter(argparse.RawDescriptionHelpFormatter):
   "Replacement argparse formatter class"
@@ -576,85 +807,111 @@ You can specify which save to process by one of the following:
 Use --list to enumerate the available saves.
 
 The following arguments can be specified multiple times:
-  -n,--name  -F,--formatter  -m,--map  -t,--type  -C,--category  -i,--include
+  -n,--name  -m,--map  -t,--type  -i,--include  -C,--category  -F,--formatter
 
 The following arguments support negation by prefixing the value with '!':
   -n,--name  -m,--map  -t,--type
 
-The following arguments support simple glob patterns via fnmatch:
+The following arguments support simple glob patterns using fnmatch:
   -n,--name  -m,--map  -t,--type
+
+Note that order matters for -n, -m, and -t! If multiple values apply, the last
+value will have the final say. For instance,
+  -m 'Island*' -m '!IslandWest' means "entire island except farm"
+  -m '!Island*' -m 'IslandWest' means "none of the island except farm"
 
 -i,--include accepts the following values:
   objects     objects (forage, artifact spots, placed things)
   crops       hoe dirt with a crop
   small       small terrain features (trees, hoe dirt, flooring, fruit trees)
   large       large terrain features (bushes)
+  trees       normal (not fruit) trees
+  fruittrees  fruit trees
+  alltrees    both normal and fruit trees
+  animals     livestock: cows, pigs, goats, etc
+  slimes      slimes within a slime hutch
   features    both small and large terrain features
-  all         objects and terrain features
+  all         objects, crops, and terrain features
 
--C,--category accepts the following values:
+-C,--category acts as a filter and accepts the following values:
   forage      forageables
   artifact    artifact spots (equivalent to -n "Artifact Spot")
-  crops       HoeDirt tile features with a crop or fertilizer present
+  cropready   (with -i crops) list only the crops that are ready
+  cropdead    (with -i crops) list only the crops that are dead
+  nofert      (with -i crops) list crops without fertilizer
+  fertnocrop  (with -i small, -i features) list fertilized HoeDirt with no crop
+
+Note that -C,--category can be specified without -i,--include:
+  forage      implies -i objects
+  artifact    implies -i objects
+  cropready   implies -i crops
+  cropdead    implies -i crops
+  nofert      implies -i crops
+  fertnocrop  implies -i small
 
 -F,--formatter applies transformation to the output of -L,--long:
   false       omit elements with value "false"
   zero        omit elements with value "0"
   points      transform "X", "Y" to pairs of numbers
 
---info-level expects a number between {B} and {F} inclusive:
+--crop-level expects a number between {B} and {F} inclusive:
   {B}           include dead and ready
   {N}           include crop seasons
   {L}           include crop forage and fertilizer
   {F}           include crop phase, yield, and harvest count
 
 Pass -v once for verbose logging or twice (or -vv) for trace logging.
-""".format(B=OUT_BRIEF, N=OUT_NORMAL, L=OUT_LONG, F=OUT_FULL),
+""".format(B=CROP_BRIEF, N=CROP_NORMAL, L=CROP_LONG, F=CROP_FULL),
       formatter_class=ArgFormatter)
+
   ag = ap.add_argument_group("farm selection")
   ag.add_argument("farm", nargs="?", help="farm name (see below)")
   ag.add_argument("--list", action="store_true",
       help="list available save files")
   ag.add_argument("-P", "--save-path", default=SVPATH, metavar="PATH",
       help="path to saves")
+
   ag = ap.add_argument_group("object enumeration")
   ag.add_argument("-i", "--include", action="append",
       choices=MAP_ITEM_TYPES.keys(),
       help="things to display")
-  ag.add_argument("-C", "--category", action="append",
-      choices=VALID_CATEGORIES, dest="categories",
-      help="categories of objects to show")
   ag.add_argument("-n", "--name", action="append", metavar="NAME",
       dest="names",
       help="select objects based on name")
+
   ag = ap.add_argument_group("output configuration")
   ag.add_argument("-c", "--count", action="store_true",
       help="show aggregate information about object counts")
   ag.add_argument("-s", "--sort", action="store_true",
       help="sort output where possible")
-  ag.add_argument("-l", "--info-level", type=int, default=OUT_BRIEF,
-      choices=OUT_LEVELS, dest="level",
+  ag.add_argument("-l", "--crop-level", choices=CROP_LEVELS.keys(),
       help="amount of crop information to display")
+
   ag = ap.add_argument_group("output filtering")
   ag.add_argument("-m", "--map", action="append", metavar="MAP",
       dest="maps",
-      help="limit to specific maps")
+      help="limit output to items within specific map(s)")
   ag.add_argument("-t", "--type", action="append", metavar="TYPE",
       dest="types",
-      help="limit to particular classes")
+      help="limit objects to those with a specific <type></type> value")
+  ag.add_argument("-C", "--category", action="append", metavar="category",
+      choices=CATEGORIES, dest="categories",
+      help="categories of objects to show")
+
   ag = ap.add_argument_group("detailed output configuration")
   ag.add_argument("-L", "--long", action="store_true",
       help="display detailed long-form object information")
   ag.add_argument("-F", "--formatter", action="append", metavar="FORMATTER",
-      choices=VALID_FORMATTERS,
-      dest="formatters",
+      choices=FORMATTERS, dest="formatters",
       help="apply specific formatter(s) on long-form output")
+
   ag = ap.add_argument_group("logging and diagnostics")
   ag.add_argument("--no-color", action="store_true",
       help="disable color output")
   mg = ag.add_mutually_exclusive_group()
-  mg.add_argument("-v", "--verbose", action="count",
+  mg.add_argument("-v", "--verbose", action="count", default=0,
       help="-v for verbose output, -vv for trace output")
+
   args = ap.parse_args()
   if args.verbose == 1:
     logger.setLevel(logging.DEBUG)
@@ -683,12 +940,15 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
     objnames=args.names,
     objtypes=args.types,
     objcats=args.categories,
-    kinds=_deduce_feature_kinds(args.include)))
+    kinds=_deduce_feature_kinds(args.include, args.categories)))
 
   if args.count:
     _print_counts(objs, args.maps, args.sort)
   else:
-    _print_objects(objs, args.sort, args.long, args.formatters, args.level)
+    crop_level = CROP_BRIEF
+    if args.crop_level:
+      crop_level = CROP_LEVELS.get(args.crop_level)
+    _print_objects(objs, args.sort, args.long, args.formatters, crop_level)
 
 if __name__ == "__main__":
   main()

@@ -51,6 +51,14 @@ def getNodeChild(node, tag, ignorecase=False):
   getLogger().debug("Failed to find child %s of node %s", tag, node)
   return None
 
+def getChildText(node, ctag, ignorecase=False):
+  "Get the text of the child node"
+  if nodeHasChild(node, ctag, ignorecase=ignorecase):
+    cnode = getNodeChild(node, ctag, ignorecase=ignorecase)
+    if isTextNode(cnode):
+      return getNodeText(cnode)
+  return None
+
 def findChildren(node, func, first=True):
   """
   Recursively find children satisfying the function. If first is True, yield

@@ -50,6 +50,7 @@ class Data(enum.Enum):
 
   Use these when accessing OBJECT[oid] fields.
   """
+  ID = "id"
   NAME = "name"
   VALUE = "value"
   EDIBILITY = "edibility"
@@ -59,7 +60,7 @@ class Data(enum.Enum):
   DESCRIPTION = "description"
   EXTRAS = "extras"
 
-def _parse_object(odef):
+def _parse_object(oid, odef):
   "Parse a raw object definition into a dict with the above keys"
   fields = odef.split("/")
   name = fields[0]
@@ -73,6 +74,7 @@ def _parse_object(odef):
   description = fields[5]
   extras = fields[6:]
   return {
+    Data.ID: oid,
     Data.NAME: name,
     Data.VALUE: value,
     Data.EDIBILITY: edibility,
@@ -90,7 +92,7 @@ ARTIFACT = ("Artifact Spot",)
 NPCS = tuple(_load_data("npcs.txt")) + (NPC_UNKNOWN,)
 LOCATIONS = tuple(_load_data("locations.txt")) + (LOCATION_UNKNOWN,)
 OBJECTS_RAW = _load_data("objects.json", reader=json.load)
-OBJECTS = {oid: _parse_object(odef) for oid, odef in OBJECTS_RAW.items()}
+OBJECTS = {oid: _parse_object(oid, odef) for oid, odef in OBJECTS_RAW.items()}
 FORAGE_SETS = _load_data("forage.json", reader=json.load)
 
 FORAGE_SPRING = tuple(FORAGE_SETS["spring"])
@@ -103,12 +105,11 @@ FORAGE_DESERT = tuple(FORAGE_SETS["desert"])
 FORAGE_ISLAND = tuple(FORAGE_SETS["island"])
 FORAGE = tuple(set.union(*(set(v) for v in FORAGE_SETS.values())))
 
-def get_object(oid, fallback=None, field=None):
+def get_object(oid, field=None):
   """
   Get the object with the given ID (either int or str allowed).
   Returns a single field if requested and the entire object otherwise. See the
   Data enum above for allowed values.
-  Returns fallback if the object doesn't exist.
   """
   if not isinstance(oid, str):
     oid = f"{oid}"
@@ -117,6 +118,13 @@ def get_object(oid, fallback=None, field=None):
     if field is not None:
       return obj[field]
     return obj
-  return fallback
+  return None
+
+def get_seeds(name=None):
+  "Get the objects with type Seeds"
+  for oid in OBJECTS:
+    obj = OBJECTS[oid]
+    if obj[Data.TYPE] == "Seeds":
+      yield obj
 
 # vim: set ts=2 sts=2 sw=2:
