@@ -397,15 +397,16 @@ def crop_get_produce(node, name=False):
     return produce
   return None
 
-def crop_is_ready(node): # FIXME: faulty logic
+def crop_is_ready(node):
   "True if the crop is ready for harvest"
-  #cnode = xmltools.descend(node, "crop/fullGrown")
-  #if cnode is not None:
-  #  grown = xmltools.getNodeText(cnode)
-  #  if grown == "true":
-  #    return True
-  #  return False
-  return None
+  phase_days = list(xmltools.descendAll(node, "crop/phaseDays/int"))
+  phase_node = xmltools.descend(node, "crop/currentPhase")
+  if phase_days and phase_node:
+    phase = xmltools.getNodeText(phase_node)
+    if isdigit(phase):
+      if int(phase) >= len(phase_days) - 1:
+        return True
+  return False
 
 def crop_is_dead(node):
   "True if the crop is dead"
@@ -872,8 +873,8 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
       help="path to saves")
 
   ag = ap.add_argument_group("object enumeration")
-  ag.add_argument("-i", "--include", action="append",
-      choices=MAP_ITEM_TYPES.keys(),
+  ag.add_argument("-i", "--include", action="append", metavar="INCLUDE",
+      choices=MAP_ITEM_TYPES.keys(), dest="includes",
       help="things to display")
   ag.add_argument("-n", "--name", action="append", metavar="NAME",
       dest="names",
@@ -894,7 +895,7 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
   ag.add_argument("-t", "--type", action="append", metavar="TYPE",
       dest="types",
       help="limit objects to those with a specific <type></type> value")
-  ag.add_argument("-C", "--category", action="append", metavar="category",
+  ag.add_argument("-C", "--category", action="append", metavar="CATEGORY",
       choices=CATEGORIES, dest="categories",
       help="categories of objects to show")
 
@@ -940,7 +941,7 @@ Pass -v once for verbose logging or twice (or -vv) for trace logging.
     objnames=args.names,
     objtypes=args.types,
     objcats=args.categories,
-    kinds=_deduce_feature_kinds(args.include, args.categories)))
+    kinds=_deduce_feature_kinds(args.includes, args.categories)))
 
   if args.count:
     _print_counts(objs, args.maps, args.sort)
