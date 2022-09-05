@@ -10,6 +10,7 @@ import glob
 import json
 import logging
 import os
+import shlex
 import sys
 import textwrap
 import zipfile
@@ -17,6 +18,14 @@ import zipfile
 logging.basicConfig(format="%(module)s:%(lineno)s: %(levelname)s: %(message)s",
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+BASE = os.path.join(os.path.dirname(__file__), os.pardir)
+
+try:
+  from utility.colorterm import ColorFormatter as C
+except ImportError:
+  sys.path.append(BASE)
+  from utility.colorterm import ColorFormatter as C
 
 class SVMod:
   "Simple class representing an unzipped mod"
@@ -33,6 +42,7 @@ class SVMod:
 
   name = property(lambda self: self.get("Name"))
   author = property(lambda self: self.get("Author"))
+  description = property(lambda self: self.get("Description"))
   version = property(lambda self: self.get("Version"))
   uniqueid = property(lambda self: self.get("UniqueID"))
   update_keys = property(lambda self: self.get("UpdateKeys"))
@@ -77,6 +87,23 @@ def enumerate_mods(mods_path):
     logger.debug("Found manifest file %s", mfile)
     yield SVMod(mfile)
 
+def enumerate_zipped_mods(zip_path):
+  "Enumerate zipped mods in the given path"
+  zmods = {}
+  zpaths = {}
+  for zfile in glob.glob(os.path.join(zip_path, "*.zip")):
+    moddef = parse_mod_zip(zfile)
+    if moddef is not None:
+      if moddef.uniqueid in zmods:
+        # We just saw this mod; is this a newer version?
+        oldver = zmods[moddef.uniqueid].version
+        newver = moddef.version
+        if cmp_version(oldver, newver) >= 0:
+          continue
+      zmods[moddef.uniqueid] = moddef
+      zpaths[moddef.uniqueid] = zfile
+  return zmods, zpaths
+
 def parse_mod_zip(zpath):
   "Parse a compressed (downloaded) mod"
   zf = zipfile.ZipFile(zpath)
@@ -90,11 +117,31 @@ def parse_mod_zip(zpath):
 def cmp_version(ver1, ver2):
   "Compare two versions and return -1 if less, 0 if equal, 1 if greater"
   for p1, p2 in zip(ver1.split("."), ver2.split(".")):
+    p1 = int(p1)
+    p2 = int(p2)
     if p1 < p2:
       return -1
     if p1 > p2:
       return 1
   return 0
+
+def print_mod(moddef, installed=False, available=False, upgrade=None):
+  "Print a mod definition to the host terminal"
+  name = C(C.BLU_B, C.BOLD, moddef.name)
+  version = C(C.GRN_B, C.BOLD, moddef.version)
+  author = C(C.GRN, moddef.author)
+  description = C(C.CYN, moddef.description)
+
+  if upgrade is not None:
+    currver = C(C.GRN_B, C.BOLD, upgrade.version)
+    mode = C(C.GRN_B, C.ITAL, C.BOLD, "upgrade from ") + currver
+  elif installed:
+    mode = C(C.GRN_B, C.ITAL, "installed")
+  elif available:
+    mode = C(C.GRN_B, C.ITAL, C.BOLD, "available")
+  else:
+    mode = C(C.GRN, C.ITAL, "not installed")
+  print(f"{name} {version} by {author} - {description} [{mode}]")
 
 def main():
   "Entry point"
@@ -108,6 +155,8 @@ def main():
       help="path to Stardew Valley game directory (default: infer)")
   ap.add_argument("-p", "--zip-path", metavar="PATH",
       help="path to downloaded zip files")
+  ap.add_argument("-l", "--list-installed", action="store_true",
+      help="list installed mods and their versions")
   ap.add_argument("-v", "--verbose", action="store_true", help="verbose output")
   args = ap.parse_args()
   if args.verbose:
@@ -127,33 +176,40 @@ def main():
     mods[moddef.uniqueid] = moddef
   logger.info("Scanned %d installed mods", len(mods))
 
+  if args.list_installed:
+    for moddef in sorted(mods.values(), key=lambda v: v.name):
+      print_mod(moddef, installed=True)
+
+  upgrades = []
+
   zmods = {}
   zpaths = {}
   if args.zip_path:
-    for zfile in glob.glob(os.path.join(args.zip_path, "*.zip")):
-      moddef = parse_mod_zip(zfile)
-      if moddef is not None:
-        if moddef.uniqueid in zmods:
-          if cmp_version(zmods[moddef.uniqueid].version, moddef.version) <= 0:
-            continue
-        zmods[moddef.uniqueid] = moddef
-        zpaths[moddef.uniqueid] = zfile
+    zmods, zpaths = enumerate_zipped_mods(args.zip_path)
     logger.info("Scanned %d zip files", len(zmods))
 
     for mid, moddef in sorted(zmods.items(), key=lambda kv: kv[1].name):
       if mid in mods:
         iver = mods[mid].version
         zver = moddef.version
-        if cmp_version(iver, zver) > 0:
+        logger.debug("%s: installed %s zip %s", moddef.name, iver, zver)
+        if cmp_version(iver, zver) < 0:
           zpath = zpaths[moddef.uniqueid]
-          print(f"{moddef.name}: {zpath} v{zver} newer than installed {iver}")
-        else:
-          logger.debug("%s: installed %s zip %s", moddef.name, iver, zver)
+          upgrades.append((zpath, moddef))
+          print_mod(moddef, upgrade=mods[mid])
       else:
-        print(f"{moddef.name}: mod not installed")
+        print_mod(moddef)
   else:
     for moddef in sorted(mods.values(), key=lambda v: v.name):
-      print(f"{moddef.name}: version {moddef.version} installed")
+      print_mod(moddef, installed=True)
+
+  navail = len(upgrades)
+  print(f"{navail} upgrade{'' if navail == 1 else 's'} available")
+  if upgrades:
+    print("Run the following commands to install them:")
+  for zpath, moddef in upgrades:
+    cmd = "unzip {} -d {}".format(shlex.quote(zpath), shlex.quote(mods_path))
+    print(C(C.BOLD, cmd))
 
 if __name__ == "__main__":
   main()
