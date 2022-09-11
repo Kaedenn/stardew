@@ -4,8 +4,6 @@
 Add "trace" as a more-verbose-than-verbose logging level.
 """
 
-# FIXME: Somehow get line numbers to work
-
 import logging
 
 TRACE = 5
@@ -14,7 +12,7 @@ class TraceLogger(logging.Logger):
   "Logger subclass defining trace(msg, ...)"
   def trace(self, *args, **kwargs):
     "Log a trace-level message"
-    return self.log(TRACE, *args, **kwargs)
+    return self.log(TRACE, *args, **kwargs, stacklevel=2)
 
 def hotpatch(logging_module):
   "Modify the logging module to use our trace logger"
