@@ -23,7 +23,7 @@ List artifact spots anywhere on the island:
 
 There are a couple ways to specify where you keep your Stardew Valley saves. By default, `savefile.py` will determine the default location based on your OS. If that fails, or if you have your saves stored somewhere else, you have two options:
 
-1. Specify the path using `-P,--save-path`. For example, if you keep your saves in `$HOME/games/StardewValley`, specify `python savefile.py -C "$HOME/games/StardewValley"` or `python savefile.py --save-path "$HOME/games/StardewValley"`.
+1. Specify the path using `-P,--save-path`. For example, if you keep your saves in `$HOME/games/StardewValley`, specify `python savefile.py -P "$HOME/games/StardewValley"` or `python savefile.py --save-path "$HOME/games/StardewValley"`.
 2. Specify the path using the `STARDEW_PATH` environment variable. This is intended for developer use.
 
 ## Listing available save files
@@ -36,7 +36,7 @@ There are a couple ways to specify where you keep your Stardew Valley saves. By 
 
 Note: Run `python savefile.py -h` for a more complete description of what can be done.
 
-You can specify your save file by name, filename, or path. For instance, I have a farm `Haven_316643857`. I can specify any of the following:
+You can specify your save file by name, name and ID, or path. For instance, with the farm `Haven_316643857`, you can specify any of the following:
 
 `python savefile.py Haven <arguments>`
 
@@ -59,66 +59,183 @@ The single-quotes `''` around `!` are required if using a shell with history sub
 
 ## Output selection
 
-Select output types using the `-i,--include` argument.
+Select output types using the `-i,--include` argument. In addition to those listed below, the following special values are also available:
 
-### Objects
+| Value       | Behavior |
+| ----------- | -------- |
+| `alltrees`  | `-i trees -i fruittrees` |
+| `features`  | `-i small -i large` |
+| `all`       | Everything |
+
+### `objects`
 
 This includes forageables, artifact spots, machines, and more.
 
-TODO
+The `-l,--data-level` argument has no effect on the output.
 
-### Terrain features
+<!-- TODO: document -C effects -->
+
+### `small`, `large`, `features`
 
 This includes things part of the terrain: hoe dirt, flooring, trees, fruit trees, grass, and bushes.
 
-TODO
+The `-l,--data-level` argument has no effect on the output.
 
-### Crops
+<!-- TODO: document -C effects -->
+
+### `crops`
 
 This includes every `HoeDirt` terrain feature with a `<crop>` child element present.
 
-TODO
+The `-l,--data-level` argument has the following effects:
+| Level     | Effect |
+| --------- | ------ |
+| `brief`   | Output map name, crop name, dead status, and ready-for-harvest status |
+| `normal`  | Include the string `"unfertilized"` if crop is not fertilized |
+| `long`    | Include fertilizer type, seasons, whether or not this is a forage crop, regrow delay if the crop regrows, and the percent chance for extra crops at harvest, if non-zero |
+| `full`    | Include numeric fertilizer ID, phase values, current phase, current phase day, minimum and maximum harvest count if applicable, and the exact chance for extra crops |
 
-### Trees (and fruit trees)
+<!-- TODO: document -C effects -->
 
-This includes every `Tree` or `FruitTree` terrain feature.
+### `trees`
 
-TODO
+This includes every `Tree` terrain feature. Does not include fruit trees.
 
-### Animals
+The `-l,--data-level` argument has the following effects:
+| Level     | Effect |
+| --------- | ------ |
+| `brief`   | Include map name, tree kind, `"stump"` if the tree is a stump, current stage number, current stage name, `"seed"` if the tree has a seed, `"tapped"` if the tree is tapped, and `"fertilized"` if the tree is fertilized |
+| `normal`  | No additional behavior |
+| `long`    | Include numeric tree type and health |
+| `full`    | No additional behavior |
+
+<!-- TODO: move various "brief" values into "normal" -->
+
+<!-- TODO: document -C effects -->
+
+### `fruittrees`
+
+This includes every `FruitTree` terrain feature. Does not include normal trees.
+
+The `-l,--data-level` argument has the following effects:
+| Level     | Effect |
+| --------- | ------ |
+| `brief`   | Include map name, tree kind, `"stump"` if the tree is a stump, current stage number, current stage name, greenhouse status, season, and either days until ready or days since ready |
+| `normal`  | No additional behavior |
+| `long`    | Include fruit name and `greenhouse-tile` status |
+| `full`    | No additional behavior |
+
+<!-- TODO: move various "brief" values into "normal" -->
+
+<!-- TODO: document -C effects -->
+
+### `animals`
 
 This includes all `FarmAnimal`s within a building interior.
 
-TODO
+The `-l,--data-level` argument has the following effects:
+| Level     | Effect |
+| --------- | ------ |
+| `brief`   | Output map name, animal type, animal name, and age |
+| `normal`  | Include friendship and happiness values. If friendship is maxed, output `"max friendship"` instead of its value. If happiness is maxed, output `"max happiness"` instead of its value |
+| `long`    | Include tile position |
+| `full`    | Always output numeric friendship and happiness values. Disables the special logic for maxed values |
 
-### Slimes
+<!-- TODO: document -C effects -->
+
+### `slimes`
 
 This includes slimes within the Slime Hutch buildings.
 
-TODO
+The `-l,--data-level` argument has the following effects:
+| Level     | Effect |
+| --------- | ------ |
+| `brief`   | Output map name, slime type, current health, and maximum health |
+| `normal`  | Include numeric `readyToMate` value |
+| `long`    | Include both pixel coordinates and experience gained upon killing |
+| `full`    | No additional behavior |
+
+<!-- TODO: document -C effects -->
+
+### `machines`
+
+This includes machines that contain an object and are on.
+
+The `-l,--data-level` argument has no effect on the output.
+
+<!-- TODO: document -C effects -->
 
 ## Output filtering
 
-Filter results using the `-C,--category`, `-n,--name`, `-m,--map`, and `-t,--type`.
+Filter results using the `-C,--category`, `-n,--name`, `-m,--map`, `-t,--type`, and `--at-pos`. All of these can be specified more than once.
 
-For convenience, certain `-C,--category` values will automatically add their necessary `-i,--include` value:
+### `-C,--category`
 
-| `-C` argument   | `-i` argument |
-| --------------- | ------------- |
-| `-C forage`     | `-i object`   |
-| `-C artifact`   | `-i object`   |
-| `-C cropready`  | `-i crops`    |
-| `-C cropdead`   | `-i crops`    |
-| `-C nofert`     | `-i crops`    |
-| `-C fertnocrop` | `-i small`    |
+For convenience, certain `-C,--category` values will automatically add their necessary `-i,--include` value if the value isn't already given.
 
-Therefore, specifying `-C forage` will act as if you specified `-C forage -i object`.
+| `-C` argument   | `-i` argument | Behavior |
+| --------------- | ------------- | -------- |
+| `-C forage`     | `-i object`   | Select objects listed in the `FORAGE` set |
+| `-C artifact`   | `-i object`   | Behave as if `-n "Artifact Spot"` was given |
+| `-C cropready`  | `-i crops`    | Select crops that are ready for harvest |
+| `-C cropdead`   | `-i crops`    | Select crops that are dead |
+| `-C nofert`     | `-i crops`    | Select crops that lack fertilizer |
+| `-C fertnocrop` | `-i small`    | Select fertilized tiles without crops |
+| `-C ready`      | `-i machines` | Select machines that are ready |
+
+Therefore, specifying `-C forage` will act as if you specified `-C forage -i object` regardless if `-i object` was given.
+
+### `-n,--name`
+
+This matches the value's display name. Quotes are required if the name contains spaces.
+
+### `-m,--map`
 
 For a list of supported maps, see `data/locations.txt`.
 
-## Long-form output
+### `-t,--type`
+
+This matches the `<type></type>` field that `object`s have. Sensible values should be those listed by the SMAPI `list_item_types` console command:
+
+`BigCraftable`, `Boots`, `Clothing`, `Flooring`, `Furniture`, `Hat`, `Object`, `Ring`, `Tool`, `Wallpaper`, `Weapon`
+
+### `--at-pos`
+
+Limit output to things at the specified coordinate. For example, `--at-pos 12,13` would omit everything not at tile position `12,13`. This value can be specified more than once.
+
+## Long-form output via `-L,--long`
+
+There are two different kinds of long-form output: JSON and XML. Pass `-f rawxml` to generate XML.
+
+<!-- TODO: document formatters and the indent argument -->
+
+### XML long-form structure
+
+```xml
+<MapEntry>
+  <Kind>one of the MAP_ITEM_TYPES values</Kind>
+  <MapName>data/locations.txt entry</MapName>
+  <Location>
+    <X>x tile position</X>
+    <Y>y tile position</Y>
+  </Location>
+  <Name>object name</Name>
+  <-- object node goes here -->
+</MapEntry>
+```
+
+The "object node" is exactly what the save file contains. Tag name and content depends on the `<Kind>` value.
+
+## The `-c,--count` argument
+
+## The `-s,--sort` argument
 
 ## Adding new NPCs, game locations, or objects
 
 You can edit the files within the `data` directory to add modded resources. Text files (`.txt`) require one entry per line. JSON (`.json`) files require valid JSON: double quotes and commas on all values except the last within an object or array.
 
+<!-- TODO: support custom files -->
+
+## Diagnostics
+
+<!-- TODO: document the -v, -vv arguments -->
