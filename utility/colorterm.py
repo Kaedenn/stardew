@@ -78,7 +78,6 @@ class DefaultColorFormatter(object):
 C = DefaultColorFormatter()
 """
 
-import os
 import re
 import sys
 
@@ -164,23 +163,24 @@ class ColorFormatterClass:
     self._attr_aliases[name] = value
 
   def add_attr(self, name, value):
+    "Add an attribute"
     self._attrs[name] = value
 
   def add_extra(self, name, value):
     "Add a new attribute"
     self._extras[name] = value
 
-  def _parse_color_list(self, args):
+  def _parse_color_list(self, args): # pylint: disable=no-self-use
     "Parse a tuple of colors into a list of escape code values"
-    c = []
+    clist = []
     for arg in args:
-      if type(arg) in (list, tuple):
-        c.extend(list(arg))
+      if isinstance(arg, (list, tuple)):
+        clist.extend(arg)
       elif isinstance(arg, str):
-        c.extend(arg.split(";"))
+        clist.extend(arg.split(";"))
       else:
-        c.append(int(arg))
-    return c
+        clist.append(int(arg))
+    return clist
 
   def get_color(self, key):
     "Like get_value(), but limited to colors"
@@ -226,28 +226,28 @@ class ColorFormatterClass:
       return value
     raise AttributeError(key)
 
-  def get_name(self, n):
+  def get_name(self, num):
     "Return the attribute corresponding to the number given"
-    def from_value(d, value):
-      "Look up all keys in d with value v"
-      return [k for k,v in d.items() if v == value]
+    def from_value(mapping, value):
+      "Look up all keys having a given value"
+      return [key for key, val in mapping.items() if val == value]
 
     cvals = set(self._colors.values())
-    if n == 0:
+    if num == 0:
       return "RESET"
-    if n in self._attrs.values():
-      return from_value(self._attrs, n)[0]
-    if n in self._extras:
-      return from_value(self._extras, n)[0]
-    if n >= BGBRIGHT and n - BGBRIGHT in cvals:
-      return from_value(self._colors, n - BGBRIGHT)[0] + "_BBG"
-    if n >= FGBRIGHT and n - FGBRIGHT in cvals:
-      return from_value(self._colors, n - FGBRIGHT)[0] + "_BFG"
-    if n >= FG and n - FG in cvals:
-      return from_value(self._colors, n - FG)[0] + "_FG"
-    if n >= BG and n - BG in cvals:
-      return from_value(self._colors, n - BG)[0] + "_BG"
-    return str(n)
+    if num in self._attrs.values():
+      return from_value(self._attrs, num)[0]
+    if num in self._extras:
+      return from_value(self._extras, num)[0]
+    if num >= BGBRIGHT and num - BGBRIGHT in cvals:
+      return from_value(self._colors, num - BGBRIGHT)[0] + "_BBG"
+    if num >= FGBRIGHT and num - FGBRIGHT in cvals:
+      return from_value(self._colors, num - FGBRIGHT)[0] + "_BFG"
+    if num >= FG and num - FG in cvals:
+      return from_value(self._colors, num - FG)[0] + "_FG"
+    if num >= BG and num - BG in cvals:
+      return from_value(self._colors, num - BG)[0] + "_BG"
+    return str(num)
 
   def __call__(self, *args):
     "Format args[-1] with args[:-1] colors and/or attributes"
@@ -256,105 +256,111 @@ class ColorFormatterClass:
   def format(self, string, *args):
     "Format `string` with `args` colors and/or attributes"
     if self._enabled:
-      colors, string = self._parse_color_list(args), string
-      code = FMT.format(";".join(str(c) for c in colors))
+      colors = self._parse_color_list(args)
+      code = FMT.format(";".join(str(clr) for clr in colors))
       return code + string + END
     return string
 
 # Public API
 
+# pylint: disable=invalid-name
 ColorFormatter = Formatter = ColorFormatterClass()
+# pylint: enable=invalid-name
 
-def str_length(s):
+def str_length(strval):
   "Return the length of a string, minus the escape sequences"
-  pats = re.findall(CSI_RE, s)
-  return len(s) - sum(len(i) for i in pats)
+  pats = re.findall(CSI_RE, strval)
+  return len(strval) - sum(len(pat) for pat in pats)
 
 # Private API
 
 def _test():
+  "Run numerous self-tests"
+  # pylint: disable=protected-access
   print("Running tests")
   state = {"n": 0}
-  f = Formatter
-  def assert_eq(v1, v2, s=None):
-    "Assert v1 == v2 with an optional message"
+  F = Formatter # pylint: disable=invalid-name
+  def assert_eq(val1, val2, message=None):
+    "Assert val1 == val2 with an optional message"
     state["n"] += 1
-    m = "{!r} == {!r}".format(v1, v2)
-    if s is not None:
-      m += ": " + s
-    assert v1 == v2, m
+    msg = "{!r} == {!r}".format(val1, val2)
+    if message is not None:
+      msg += ": " + message
+    assert val1 == val2, msg
 
-  def test_format_call(s, *colors):
+  def test_format_call(strval, *colors):
     """
     format/__call__ tests: ensure the following hold:
       Formatter.__call__() and Formatter.format() give identical results
-      str_length() gives len(s) for both __call__() and format() strings
+      str_length() gives len(strval) for both __call__() and format() strings
     """
-    s1 = f(*(list(colors) + [s]))
-    s2 = f.format(*([s] + list(colors)))
-    assert_eq(s1, s2, "call == format '{!r}' with colors {!r}".format(s, colors))
-    assert_eq(str_length(s1), len(s), "len({!r}) == len({!r}) {}".format(s1, s, len(s)))
-    assert_eq(str_length(s2), len(s), "len({!r}) == len({!r}) {}".format(s2, s, len(s)))
-    print("format({!r}, {}) == \"{}\"".format(s, colors, s1))
+    sval1 = F(*(list(colors) + [strval]))
+    sval2 = F.format(*([strval] + list(colors)))
+    assert_eq(sval1, sval2,
+        "call == format '{!r}' with colors {!r}".format(strval, colors))
+    assert_eq(str_length(sval1), len(strval),
+        "len({!r}) == len({!r}) {}".format(sval1, strval, len(strval)))
+    assert_eq(str_length(sval2), len(strval),
+        "len({!r}) == len({!r}) {}".format(sval2, strval, len(strval)))
+    print("format({!r}, {}) == \"{}\"".format(strval, colors, sval1))
 
   test_format_call("") # null empty test
   test_format_call("null test") # null non-empty test
-  test_format_call("basic test", f.RED)
-  test_format_call("fg and bg test", f.RED, f.WHT_BG)
-  test_format_call("fg and bg test", f.RED_FG, f.WHT_BG)
-  test_format_call("fg and bg test", f.RED_B, f.WHT_BG)
-  test_format_call("fg, bg, attr test", f.BOLD, f.RED_FG, f.WHT_BG)
+  test_format_call("basic test", F.RED)
+  test_format_call("fg and bg test", F.RED, F.WHT_BG)
+  test_format_call("fg and bg test", F.RED_FG, F.WHT_BG)
+  test_format_call("fg and bg test", F.RED_B, F.WHT_BG)
+  test_format_call("fg, bg, attr test", F.BOLD, F.RED_FG, F.WHT_BG)
 
   # name -> number tests
-  for c in f._colors:
-    n = getattr(f, c)
-    test_format_call("color {} FG".format(c), getattr(f, c + "_FG"))
-    test_format_call("color {} B".format(c), getattr(f, c + "_B"))
-    test_format_call("color {} BFG".format(c), getattr(f, c + "_BFG"))
-    test_format_call("color {} BG".format(c), getattr(f, c + "_BG"))
-    test_format_call("color {} BBG".format(c), getattr(f, c + "_BBG"))
+  for color in F._colors:
+    test_format_call("color {} FG".format(color), getattr(F, color + "_FG"))
+    test_format_call("color {} B".format(color), getattr(F, color + "_B"))
+    test_format_call("color {} BFG".format(color), getattr(F, color + "_BFG"))
+    test_format_call("color {} BG".format(color), getattr(F, color + "_BG"))
+    test_format_call("color {} BBG".format(color), getattr(F, color + "_BBG"))
 
   # number -> name for attrs
-  for c, n in f._attrs.items():
-    assert_eq(f.get_name(n), c)
+  for aname, anum in F._attrs.items():
+    assert_eq(F.get_name(anum), aname)
 
   # number -> name for colors
-  for c, n in f._colors.items():
-    assert_eq(f.get_name(n + FG), c + "_FG")
-    assert_eq(f.get_name(n + BG), c + "_BG")
-    assert_eq(f.get_name(n + FGBRIGHT), c + "_BFG")
-    assert_eq(f.get_name(n + BGBRIGHT), c + "_BBG")
+  for cname, cnum in F._colors.items():
+    assert_eq(F.get_name(cnum + FG), cname + "_FG")
+    assert_eq(F.get_name(cnum + BG), cname + "_BG")
+    assert_eq(F.get_name(cnum + FGBRIGHT), cname + "_BFG")
+    assert_eq(F.get_name(cnum + BGBRIGHT), cname + "_BBG")
 
   # number -> name for attr aliases
-  for a, c in f._attr_aliases.items():
-    n = getattr(f, a)
-    print("getattr(f, {}) == {}".format(a, n))
-    name = f.get_name(n)
-    assert_eq(name, c)
+  for aname, avalue in F._attr_aliases.items():
+    valnum = getattr(F, aname)
+    print("getattr(F, {}) == {}".format(aname, valnum))
+    name = F.get_name(valnum)
+    assert_eq(name, avalue)
 
   # number -> name for color aliases
-  for a, c in f._color_aliases.items():
-    n = getattr(f, a)
-    print("getattr(f, {}) == {}".format(a, n))
-    name = f.get_name(n)
+  for aname, avalue in F._color_aliases.items():
+    valnum = getattr(F, aname)
+    print("getattr(F, {}) == {}".format(aname, valnum))
+    name = F.get_name(valnum)
     if name.endswith("_FG"):
       name = name[:-3]
     if name.endswith("_BFG"):
       name = name[:-4] + "_B"
-    assert_eq(name, c)
+    assert_eq(name, avalue)
 
   # extra attributes
-  f.add_attr("BLINK", 5)
-  assert_eq(f.get_name(5), "BLINK")
-  print(f(f.BLINK, "this text blinks"))
+  F.add_attr("BLINK", 5)
+  assert_eq(F.get_name(5), "BLINK")
+  print(F(F.BLINK, "this text blinks"))
 
-  f.add_attr("PUR8", "38;5;201")
-  assert_eq(f.get_name("38;5;201"), "PUR8")
-  print(f(f.PUR8, "should be a nice purple"))
+  F.add_attr("PUR8", "38;5;201")
+  assert_eq(F.get_name("38;5;201"), "PUR8")
+  print(F(F.PUR8, "should be a nice purple"))
 
-  f.add_attr("RED24", "48;2;255;0;0")
-  assert_eq(f.get_name("48;2;255;0;0"), "RED24")
-  print(f(f.RED24, "this text is a very bright red"))
+  F.add_attr("RED24", "48;2;255;0;0")
+  assert_eq(F.get_name("48;2;255;0;0"), "RED24")
+  print(F(F.RED24, "this text is a very bright red"))
 
   print("{} tests done".format(state["n"]))
 
