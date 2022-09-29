@@ -75,6 +75,20 @@ def format_days(ndays, yfmt="{}y", mfmt="{}m", dfmt="{}d", sep=""):
     result.append(dfmt.format(days))
   return sep.join(result)
 
+def format_minutes(nminutes, dfmt="{}d", hfmt="{}h", mfmt="{}m", sep=""):
+  "Format a number of minutes to %dd%dh%dm"
+  mins = nminutes % 60
+  hours = (nminutes // 60) % 24
+  days = (nminutes // 60) // 24
+  result = []
+  if days:
+    result.append(dfmt.format(days))
+  if hours:
+    result.append(hfmt.format(hours))
+  if mins:
+    result.append(mfmt.format(mins))
+  return sep.join(result)
+
 class Seasons(enum.Enum):
   "The four seasons"
   SPRING = "spring"
@@ -110,9 +124,26 @@ class TreeStage(enum.Enum):
   @classmethod
   def get(cls, val):
     "Convert a numeric stage (possibly > 5) to an enum value"
+    if val < cls.SAPLING.value:
+      return cls.SAPLING
     if cls.SAPLING.value <= val <= cls.GROWN.value:
       return cls(val)
     return cls.GROWN
+
+class Quality(enum.Enum):
+  "Quality constants"
+  NORMAL = 0
+  SILVER = 1
+  GOLD = 2
+  IRIDIUM = 3
+  @classmethod
+  def get(cls, val):
+    "Convert a number (possibly > 3) to an enum value"
+    if val < cls.NORMAL.value:
+      return cls.NORMAL
+    if cls.NORMAL.value <= val <= cls.IRIDIUM.value:
+      return cls(val)
+    return cls.IRIDIUM
 
 def _load_data(name, reader=None, to=None): # pylint: disable=invalid-name
   """

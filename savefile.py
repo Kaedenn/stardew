@@ -66,6 +66,22 @@ CATEGORY_MAP = {
   CAT_READY: MAP_MACHINES
 }
 
+# Omit the following machines
+MACHINE_OMIT = (
+  "Sprinkler",
+  "Quality Sprinkler",
+  "Iridium Sprinkler",
+  "Wood Fence",
+  "Stone Fence",
+  "Iron Fence",
+  "Hardwood Fence",
+  "Worm Bin",
+  "Coffee Maker",
+  "Statue Of Endless Fortune",
+  "Statue Of Perfection",
+  "Statue Of True Perfection"
+)
+
 LEVEL_BRIEF = 0
 LEVEL_NORMAL = 1
 LEVEL_LONG = 2
@@ -86,6 +102,13 @@ SEASON_COLORS = {
   stardew.Seasons.FALL: (C.BRN, C.BOLD),
   stardew.Seasons.WINTER: (C.CYN_B, C.BOLD),
   stardew.Seasons.ISLAND: (C.YEL_B, C.BOLD)
+}
+
+QUALITY_COLORS = {
+  stardew.Quality.NORMAL: (C.WHT, C.BOLD,),
+  stardew.Quality.SILVER: (C.WHT_B, C.BOLD),
+  stardew.Quality.GOLD: (C.YEL_B, C.BOLD),
+  stardew.Quality.IRIDIUM: (C.MAG_B, C.BOLD)
 }
 
 utility.tracelog.hotpatch(logging)
@@ -202,7 +225,9 @@ def load_save_file(svpath):
     svdir, svname = os.path.split(svpath)
   svfile = os.path.join(svdir, svname)
   logger.debug("Loading %s from %s", svname, svdir)
-  return minidom.parse(open(svfile, "rt"))
+  root = minidom.parse(open(svfile, "rt"))
+  logger.debug("Loaded %s", svfile)
+  return root
 
 def is_nil_node(node):
   "True if the object is just xsi:nil"
@@ -333,6 +358,8 @@ def get_machines(root):
   for mapname, objname, objpos, node in get_objects(root):
     item = xmltools.getNodeChild(node, "heldObject")
     ison = xmltools.getChildText(node, "isOn")
+    if objname in MACHINE_OMIT:
+      continue
     if item is not None and ison == "true":
       yield mapname, objname, objpos, node
 
@@ -489,6 +516,11 @@ def feature_fertilized(node):
 
 def machine_ready(node):
   "True if the machine is ready for harvest"
+  ready = xmltools.getChildText(node, "readyForHarvest")
+  if ready == "true":
+    return True
+  if ready == "false":
+    return False
   item = xmltools.getNodeChild(node, "heldObject")
   if item is not None:
     nmins = xmltools.getChildText(node, "minutesUntilReady")
@@ -496,6 +528,54 @@ def machine_ready(node):
     if nmins == "0" and imins == "0":
       return True
   return False
+
+def build_object_long_xml(objdef):
+  "Convert an object definition to XML (via -L,--long with -f rawxml)"
+  root = minidom.Document()
+  def add_text_node(parent, name, text):
+    "Create a text node, an element to contain it, and add it to the parent"
+    cnode = root.createElement(name)
+    cnode.appendChild(root.createTextNode(text))
+    parent.appendChild(cnode)
+  top = root.createElement("MapEntry")
+  root.appendChild(top)
+  add_text_node(top, "Kind", objdef.kind)
+  add_text_node(top, "MapName", objdef.map)
+  locnode = root.createElement("Location")
+  add_text_node(locnode, "X", f"{objdef.pos[0]}")
+  add_text_node(locnode, "Y", f"{objdef.pos[1]}")
+  top.appendChild(locnode)
+  add_text_node(top, "Name", objdef.name)
+  top.appendChild(objdef.node)
+  return top
+
+def print_object_long(objdef, formatters):
+  "Print an object in long form (via -L,--long)"
+  objnode = objdef.node
+
+  as_xml = False
+  indent = None
+  if formatters:
+    if "rawxml" in formatters:
+      as_xml = True
+    for rule in formatters:
+      if rule.startswith("indent="):
+        indent = rule[rule.index("=")+1:]
+        if indent == "tab":
+          indent = "\t"
+        elif isnumber(indent):
+          indent = " " * int(indent)
+
+  if as_xml:
+    obj = build_object_long_xml(objdef)
+    if indent is None:
+      objstr = obj.toxml().strip()
+    else:
+      objstr = obj.toprettyxml(indent=indent).strip()
+  else:
+    objstr = node_to_json(objnode, formatters=formatters, indent=indent)
+
+  print(objstr)
 
 def print_crop(objdef, data_level=LEVEL_BRIEF):
   "Print an object definition representing a HoeDirt feature with a crop"
@@ -617,56 +697,8 @@ def print_animal(objdef, data_level=LEVEL_BRIEF):
     " ".join(labels)
   ).rstrip())
 
-def build_object_long_xml(objdef):
-  "Convert an object definition to XML (via -L,--long with -f rawxml)"
-  root = minidom.Document()
-  def add_text_node(parent, name, text):
-    "Create a text node, an element to contain it, and add it to the parent"
-    cnode = root.createElement(name)
-    cnode.appendChild(root.createTextNode(text))
-    parent.appendChild(cnode)
-  top = root.createElement("MapEntry")
-  root.appendChild(top)
-  add_text_node(top, "Kind", objdef.kind)
-  add_text_node(top, "MapName", objdef.map)
-  locnode = root.createElement("Location")
-  add_text_node(locnode, "X", f"{objdef.pos[0]}")
-  add_text_node(locnode, "Y", f"{objdef.pos[1]}")
-  top.appendChild(locnode)
-  add_text_node(top, "Name", objdef.name)
-  top.appendChild(objdef.node)
-  return top
-
-def print_object_long(objdef, formatters):
-  "Print an object in long form (via -L,--long)"
-  objnode = objdef.node
-
-  as_xml = False
-  indent = None
-  if formatters:
-    if "rawxml" in formatters:
-      as_xml = True
-    for rule in formatters:
-      if rule.startswith("indent="):
-        indent = rule[rule.index("=")+1:]
-        if indent == "tab":
-          indent = "\t"
-        elif isnumber(indent):
-          indent = " " * int(indent)
-
-  if as_xml:
-    obj = build_object_long_xml(objdef)
-    if indent is None:
-      objstr = obj.toxml().strip()
-    else:
-      objstr = obj.toprettyxml(indent=indent).strip()
-  else:
-    objstr = node_to_json(objnode, formatters=formatters, indent=indent)
-
-  print(objstr)
-
 def print_tree(objdef, data_level=LEVEL_BRIEF): # TODO: reduce LEVEL_BRIEF noise
-  "Print a tree or a fruit tree"
+  "Print a tree"
   objkind = objdef.kind
   mapname = objdef.map
   objname = objdef.name
@@ -685,55 +717,23 @@ def print_tree(objdef, data_level=LEVEL_BRIEF): # TODO: reduce LEVEL_BRIEF noise
 
   labels = []
   if data_level >= LEVEL_LONG:
+    labels.append("at ({}, {})".format(
+      C(C.BOLD, f"{objpos[0]}"),
+      C(C.BOLD, f"{objpos[1]}")))
     labels.append("type=" + C(C.BOLD, ttype))
   if stump == "true":
     labels.append(C(C.BRN, C.BOLD, "stump"))
 
   if isnumber(stage):
     stage_val = stardew.TreeStage.get(int(stage))
-    labels.append(C(C.BLU_B, "stage=") + C(C.BLU_B, C.BOLD, stage))
+    if data_level >= LEVEL_LONG:
+      labels.append(C(C.BLU_B, "stage=") + C(C.BLU_B, C.BOLD, stage))
     labels.append(C(C.CYN_B, C.BOLD, stage_val.name.title()))
 
   if data_level >= LEVEL_LONG:
     labels.append(C(C.RED_B, "health=") + C(C.RED_B, C.BOLD, health))
 
-  if objkind == MAP_FRUIT_TREES:
-    fruit_id = xmltools.getChildText(objnode, "indexOfFruit")
-    fruit = stardew.get_object(fruit_id, field=D.NAME)
-    greenhouse_tile = xmltools.getChildText(objnode, "greenHouseTileTree")
-    greenhouse = xmltools.getChildText(objnode, "greenHouseTree")
-    season = xmltools.getChildText(objnode, "fruitSeason")
-    fruits = xmltools.getChildText(objnode, "fruitsOnTree")
-    struck = xmltools.getChildText(objnode, "struckByLightningCountdown")
-    days_until = xmltools.getChildText(objnode, "daysUntilMature")
-
-    labels.append(C(*SEASON_COLORS[stardew.Seasons(season)], season))
-    if greenhouse == "true":
-      labels.append(C(C.CYN, "greenhouse"))
-    if data_level >= LEVEL_LONG:
-      if fruit:
-        labels.append(C(C.CYN, "fruit=") + C(C.CYN_B, fruit))
-      if greenhouse_tile == "true":
-        labels.append(C(C.BLU, "greenhouse-tile"))
-      if isnumber(fruits) and int(fruits) > 0:
-        labels.append(C(C.CYN, "fruits=") + C(C.CYN_B, C.BOLD, fruits))
-    if isnumber(struck) and int(struck) != 0:
-      labels.append(C(C.BRN, "coal=") + C(C.BRN_B, struck))
-    if isfloat(days_until):
-      # TODO: deduce fruit quality
-      ndays = int(days_until)
-      if ndays > 0:
-        labels.append(" ".join((
-          C(C.RED, "ready in"),
-          C(C.RED_B, C.BOLD, days_until),
-          C(C.RED, "days"))))
-      else:
-        labels.append(stardew.format_days(abs(ndays),
-          yfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "y"),
-          mfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "m"),
-          dfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "d"),
-          sep=" "))
-  else:
+  if data_level >= LEVEL_NORMAL:
     tapped = xmltools.getChildText(objnode, "tapped")
     seed = xmltools.getChildText(objnode, "hasSeed")
     fertilized = xmltools.getChildText(objnode, "fertilized")
@@ -746,11 +746,98 @@ def print_tree(objdef, data_level=LEVEL_BRIEF): # TODO: reduce LEVEL_BRIEF noise
 
   mname = C(C.GRN, mapname)
   oname = C(C.CYN, C.BOLD, objname)
-  objx = C(C.BOLD, f"{objpos[0]}")
-  objy = C(C.BOLD, f"{objpos[1]}")
 
-  print("{} {} at ({}, {}) {}".format(
-    mname, oname, objx, objy, " ".join(labels)))
+  print("{} {} {}".format(
+    mname, oname, " ".join(labels)))
+
+def print_fruit_tree(objdef, data_level=LEVEL_BRIEF):
+  "Like print_tree, but print a fruit tree"
+  mapname = objdef.map
+  objname = objdef.name
+  objpos = objdef.pos
+  objnode = objdef.node
+
+  ttype = xmltools.getChildText(objnode, "treeType")
+  stump = xmltools.getChildText(objnode, "stump")
+  stage = xmltools.getChildText(objnode, "growthStage")
+  health = xmltools.getChildText(objnode, "health")
+
+  objname = stardew.get_fruit_tree(ttype)
+
+  labels = []
+  if data_level >= LEVEL_LONG:
+    labels.append("at ({}, {})".format(
+      C(C.BOLD, f"{objpos[0]}"),
+      C(C.BOLD, f"{objpos[1]}")))
+    labels.append("type=" + C(C.BOLD, ttype))
+
+  if stump == "true":
+    labels.append(C(C.BRN, C.BOLD, "stump"))
+
+  if isnumber(stage):
+    # FIXME: get the correct names for the stages
+    # fruit trees are grown at level 4
+    stage_val = stardew.TreeStage.get(int(stage) + 1)
+    if data_level >= LEVEL_LONG:
+      labels.append(C(C.BLU_B, "stage=") + C(C.BLU_B, C.BOLD, stage))
+    labels.append(C(C.CYN_B, C.BOLD, stage_val.name.lower()))
+
+  if data_level >= LEVEL_LONG:
+    labels.append(C(C.RED_B, "health=") + C(C.RED_B, C.BOLD, health))
+
+  fruit_id = xmltools.getChildText(objnode, "indexOfFruit")
+  fruit = stardew.get_object(fruit_id, field=D.NAME)
+
+  greenhouse_tile = xmltools.getChildText(objnode, "greenHouseTileTree")
+  greenhouse = xmltools.getChildText(objnode, "greenHouseTree")
+  season = xmltools.getChildText(objnode, "fruitSeason")
+  fruits = xmltools.getChildText(objnode, "fruitsOnTree")
+  struck = xmltools.getChildText(objnode, "struckByLightningCountdown")
+  days_until = xmltools.getChildText(objnode, "daysUntilMature")
+
+  if data_level >= LEVEL_NORMAL:
+    labels.append(C(*SEASON_COLORS[stardew.Seasons(season)], season))
+
+  if data_level >= LEVEL_NORMAL:
+    if isnumber(fruits) and int(fruits) > 0:
+      labels.append(C(C.CYN, "fruits=") + C(C.CYN_B, C.BOLD, fruits))
+
+  if data_level >= LEVEL_LONG:
+    if fruit:
+      labels.append(C(C.CYN, "fruit=") + C(C.CYN_B, fruit))
+    if greenhouse == "true":
+      labels.append(C(C.CYN, "greenhouse"))
+    if greenhouse_tile == "true":
+      labels.append(C(C.BLU, "greenhouse-tile"))
+
+  if isnumber(struck) and int(struck) != 0:
+    labels.append(C(C.BRN, "coal=") + C(C.BRN, struck))
+
+  if isfloat(days_until):
+    ndays = int(days_until)
+    if ndays > 0:
+      labels.append(" ".join((
+        C(C.RED, "ready in"),
+        C(C.RED_B, C.BOLD, days_until),
+        C(C.RED, "days"))))
+    else:
+      quality = abs(ndays) // (stardew.DAYS_MONTH * stardew.MONTHS_YEAR)
+      qval = stardew.Quality.get(quality)
+      qstr = C(*QUALITY_COLORS[qval], qval.name.lower())
+      labels.append(qstr)
+      if data_level >= LEVEL_LONG:
+        labels.append(stardew.format_days(abs(ndays),
+          yfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "y"),
+          mfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "m"),
+          dfmt=C(C.RED_B, C.BOLD, "{}") + C(C.RED, C.ITAL, "d"),
+          sep=" "))
+      # TODO: display "<level> in <days>, at <date>"
+
+  mname = C(C.GRN, mapname)
+  oname = C(C.CYN, C.BOLD, objname)
+
+  print("{} {} {}".format(
+    mname, oname, " ".join(labels)))
 
 def print_slime(objdef, data_level=LEVEL_BRIEF):
   "Print a slime object"
@@ -788,6 +875,61 @@ def print_slime(objdef, data_level=LEVEL_BRIEF):
   label = " ".join(labels)
   print("{} {} {}".format(mname, oname, label))
 
+def print_machine(objdef, data_level=LEVEL_BRIEF):
+  "Print a processing machine"
+  mapname = objdef.map
+  objname = objdef.disp_name()
+  objpos = objdef.pos
+  objnode = objdef.node
+
+  labels = []
+
+  held = xmltools.getNodeChild(objnode, "heldObject")
+  hname = get_obj_name(held)
+  if hname == "Chest":
+    if data_level >= LEVEL_FULL:
+      labels.append(C(C.BOLD, "container"))
+    nitems = len(list(xmltools.descendAll(objnode, "items/Item")))
+    if nitems == 0:
+      labels.append(C(C.BLU_B, "empty"))
+    else:
+      suff = "item" if nitems == 1 else "items"
+      labels.append(C(C.BLU_B, C.BOLD, f"{nitems}") + " " + C(C.BLU_B, suff))
+
+  ready = xmltools.getChildText(objnode, "readyForHarvest")
+  if ready == "true":
+    labels.append(C(C.GRN_B, C.BOLD, "ready"))
+
+  days = xmltools.getChildText(objnode, "daysToMature")
+  minutes = xmltools.getChildText(objnode, "minutesUntilReady")
+  if days is not None and isnumber(days) and int(days) > 0:
+    # TODO: handle partial progress for casks
+    labels.append(C(C.RED_B, "ready in"))
+    labels.append(C(C.RED_B, C.BOLD, days))
+    labels.append(C(C.RED_B, "days"))
+  elif minutes is not None and isnumber(minutes) and int(minutes) > 0:
+    ready_in = stardew.format_minutes(int(minutes), sep=" ")
+    labels.append(C(C.RED_B, "ready in"))
+    labels.append(C(C.RED_B, C.BOLD, ready_in))
+    # TODO: exact time when ready
+
+  if data_level >= LEVEL_FULL:
+    labels.append(C(C.RED_B, "minutes=") + C(C.RED_B, C.BOLD, minutes))
+
+  if data_level >= LEVEL_FULL:
+    labels.append("("
+        + C(C.BOLD, f"{objpos[0]}")
+        + ", "
+        + C(C.BOLD, f"{objpos[1]}")
+        + ")")
+
+  print("{} {} {} {}".format(
+    C(C.GRN, mapname),
+    C(C.CYN, C.BOLD, objname),
+    C(C.CYN_B, hname),
+    " ".join(labels)
+  ))
+
 def print_object(objdef, long=False, formatters=None, data_level=LEVEL_BRIEF):
   "Print an arbitrary map thing"
   objkind = objdef.kind
@@ -800,12 +942,16 @@ def print_object(objdef, long=False, formatters=None, data_level=LEVEL_BRIEF):
     print_object_long(objdef, () if formatters is None else formatters)
   elif objkind == MAP_CROPS and is_crop(objnode):
     print_crop(objdef, data_level=data_level)
-  elif objkind in (MAP_TREES, MAP_FRUIT_TREES):
+  elif objkind == MAP_TREES:
     print_tree(objdef, data_level=data_level)
+  elif objkind == MAP_FRUIT_TREES:
+    print_fruit_tree(objdef, data_level=data_level)
   elif objkind == MAP_ANIMALS:
     print_animal(objdef, data_level=data_level)
   elif objkind == MAP_SLIMES:
     print_slime(objdef, data_level=data_level)
+  elif objkind == MAP_MACHINES:
+    print_machine(objdef, data_level=data_level)
   else:
     # TODO: add HoeDirt output (for fertilizer-no-crop)
     mapname = C(C.GRN, mapname)
@@ -919,6 +1065,10 @@ def filter_map_things(root, mapnames, objnames, objtypes, objcats, kinds):
         new_show = True
     return update_show(new_show, curr_show)
 
+  def wants(cat):
+    "True if the user wants the category"
+    return matches(objcats, cat)
+
   at_pos = None
   if objcats:
     for cat in objcats:
@@ -930,36 +1080,38 @@ def filter_map_things(root, mapnames, objnames, objtypes, objcats, kinds):
   for kind, mname, oname, opos, obj in get_map_things(root, things):
     show = None # tri-bool: False, unset, True
 
-    if at_pos:
-      if opos[0] != at_pos[0] or opos[1] != at_pos[1]:
-        show = False
-
     # maps are exclusive and require special logic
     if mapnames and matches_map(mapnames, mname) is False:
       show = False
+
+    if at_pos:
+      logger.trace("opos=%r at_pos=%r", opos, at_pos)
+      if opos[0] != at_pos[0] or opos[1] != at_pos[1]:
+        show = False
 
     # everything else is inclusive
     if objnames or objtypes or objcats:
       show = test_show(objnames, oname, show)
       show = test_show(objtypes, get_obj_type(obj), show)
       if kind == MAP_OBJECTS:
-        if matches(objcats, "artifact") and oname in stardew.ARTIFACT:
+        if wants("artifact") and oname in stardew.ARTIFACT:
           show = update_show(True, show)
-        elif matches(objcats, "forage") and oname in stardew.FORAGE:
+        elif wants("forage") and oname in stardew.FORAGE:
           show = update_show(True, show)
       elif kind == MAP_CROPS:
-        show = test_show(objnames, crop_get_seed(obj, name=True), show)
-        if matches(objcats, "cropready") and crop_is_ready(obj):
+        seed = crop_get_seed(obj, name=True)
+        show = test_show(objnames, seed, show)
+        if wants("cropready") and crop_is_ready(obj):
           show = update_show(True, show)
-        if matches(objcats, "cropdead") and crop_is_dead(obj):
+        if wants("cropdead") and crop_is_dead(obj):
           show = update_show(True, show)
-        if matches(objcats, "nofert") and feature_get_fertilizer(obj) is None:
+        if wants("nofert") and feature_get_fertilizer(obj) is None:
           show = update_show(True, show)
         # TODO: produce filtering
         # TODO: fertilizer filtering
       elif kind == MAP_FEATS_SMALL:
-        if matches(objcats, "fertnocrop") and oname == "HoeDirt":
-          if not is_crop(obj) and feature_get_fertilizer(obj) != "0":
+        if wants("fertnocrop") and oname == "HoeDirt":
+          if not is_crop(obj) and feature_fertilized(obj):
             show = update_show(True, show)
       elif kind == MAP_FEATS_LARGE:
         pass # TODO: filtering
@@ -972,7 +1124,7 @@ def filter_map_things(root, mapnames, objnames, objtypes, objcats, kinds):
       elif kind == MAP_SLIMES:
         pass # TODO: filtering
       elif kind == MAP_MACHINES:
-        if matches(objcats, "ready") and machine_ready(obj):
+        if wants("ready") and machine_ready(obj):
           show = update_show(True, show)
     elif show is None:
       # no specifications matches everything
@@ -1027,7 +1179,7 @@ def _deduce_feature_kinds(includes, categories):
       kinds.update(MAP_ITEM_TYPES[want_kind].split("+"))
   if categories:
     for catval in categories:
-      typeval = CATEGORY_MAP[catval]
+      typeval = CATEGORY_MAP.get(catval)
       if typeval is not None and typeval not in kinds:
         kinds.add(typeval)
   if not kinds:
