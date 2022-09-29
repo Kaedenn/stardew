@@ -35,7 +35,7 @@ import platform
 # Path to this script's data files
 DATA_PATH = "data"
 
-DAYS_MONTH = 30
+DAYS_MONTH = 28
 MONTHS_YEAR = 4
 
 NPC_UNKNOWN = "<unknown>"     # "undetermined NPC" literal
@@ -145,16 +145,19 @@ class Quality(enum.Enum):
       return cls(val)
     return cls.IRIDIUM
 
+def get_data_path():
+  "Determine the path to the data directory by trying pwd, then __file__"
+  for base in (os.path.curdir, os.path.dirname(__file__)):
+    dpath = os.path.join(base, DATA_PATH)
+    if os.path.isdir(dpath):
+      return dpath
+  raise IOError("Failed to find data path {!r}".format(DATA_PATH))
+
 def _load_data(name, reader=None, to=None): # pylint: disable=invalid-name
-  """
-  `entries = reader(open(name, "rt"))`
-  If `reader` is None, then `entries = file_object.read().splitlines()`
-  If `to` is not None, then `entries = to(entries)`
-  Returns `entries`
-  """
+  "Load a file from the data directory with the given name"
   if reader is None:
     reader = lambda fobj: fobj.read().splitlines()
-  with open(os.path.join(DATA_PATH, name), "rt") as fobj:
+  with open(os.path.join(get_data_path(), name), "rt") as fobj:
     entries = reader(fobj)
   if to is not None:
     entries = to(entries)
