@@ -10,25 +10,38 @@ TODO:
   var objects = new List<StardewValley.Object>();
   var objmap = new Dictionary<string, List<Tuple<string, StardewValley.Object>>>();
 
+  bool mShowArtifacts = true;
   bool mShowObjects = true;
   bool mShowForage = true;
   bool mCurrMap = false;
+  bool mWarp = false;
 
   foreach (var arg in args) {
     if (arg == "-h" || arg == "--help") {
       return String.Join("\n",
-          "cs --script objects.cs [-h] [-o] [-f] [-m]",
+          "cs --script objects.cs [-h] [-a] [-o] [-f] [-m] [-w]",
           "options:",
           "\t-h\tthis message",
+          "\t-a\tshow only artifacts",
           "\t-o\tshow only artifacts, clay stone, and bone rocks",
           "\t-f\tshow only forage items",
-          "\t-m\tlimit output to only the current map");
+          "\t-m\tlimit output to only the current map",
+          "\t-w\twarp player to the first match");
+    } else if (arg == "-a") {
+      mShowArtifacts = true;
+      mShowObjects = false;
+      mShowForage = false;
     } else if (arg == "-o") {
+      mShowObjects = true;
       mShowForage = false;
     } else if (arg == "-f") {
+      mShowArtifacts = false;
       mShowObjects = false;
+      mShowForage = true;
     } else if (arg == "-m") {
       mCurrMap = true;
+    } else if (arg == "-w") {
+      mWarp = true;
     }
   }
 
@@ -117,6 +130,11 @@ TODO:
           }
           break;
         case 590: // Artifact Spot
+          if (mShowObjects || mShowArtifacts) {
+            addItem(loc.name, obj);
+            objects.Add(obj);
+          }
+          break;
         case 816: // Fossil Stone (large)
         case 817: // Fossil Stone
         case 818: // Clay Stone
@@ -137,7 +155,10 @@ TODO:
   var onames = new List<string>(objmap.Keys);
   onames.Sort();
 
-  foreach (var oname in onames) { // TODO: sort by name
+  Info($"Discovered {objects.Count} objects");
+
+  string warpCommand = "";
+  foreach (var oname in onames) {
     var ovalue = objmap[oname];
     result += $"\n{oname}: {ovalue.Count}";
     foreach (var objdef in ovalue) {
@@ -145,12 +166,54 @@ TODO:
       var obj = objdef.Item2;
       var oloc = obj.tileLocation;
       var pos = $"{oloc.X} {oloc.Y}";
-      result += $"\n\tdebug warp {omap} {pos}";
+      var command = $"warp {omap} {pos}";
+      if (mWarp && warpCommand == "") {
+        warpCommand = command;
+        result += $"\n\texec debug {command}";
+      } else {
+        result += $"\n\tdebug {command}";
+      }
     }
   }
   result += "\n";
 
+  if (warpCommand != "") {
+    Info(warpCommand + "...");
+    if (!RunDebugCommand(warpCommand)) {
+      Info($"Failed to execute command \"{warpCommand}\"");
+    }
+  }
+
   return result;
 }
+} // Main
+
+static void Info(string message) {
+  Game1.chatBox.addInfoMessage(message);
+}
+
+static bool RunDebugCommand(string command) {
+  return StardewValley.Program.gamePtr.parseDebugInput(command);
+}
+
+} // class UserCode
+} // namespace ConsoleCode
+
+/*
+namespace Kae {
+  public class ObjectCommandMod : Mod {
+    public override void Entry(IModHelper helper) {
+      this.Monitor.Log("Loaded ObjectCommandMod", LogLevel.Info);
+    }
+    private void onObjectsCommand(string command, string[] args) {
+      this.Monitor.Log($"Received command '{command}' args '{String.Join("\n", args)}");
+    }
+  }
+}
+*/
+
+namespace ConsoleCode {
+  class Dummy {
+    public object dummy() {
 
 // vim: set ts=2 sts=2 sw=2 nocindent cinoptions=:
