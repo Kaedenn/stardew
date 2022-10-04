@@ -21,6 +21,9 @@ import collections
 import logging
 import xml.dom.minidom as minidom
 
+# Commonly-used constants
+TEXT_NODE = minidom.Element.TEXT_NODE
+
 def getLogger():
   """
   Get the logger for this module
@@ -47,13 +50,13 @@ def getNodeChildren(node, names_only=False):
   Returns just the tag names if names_only is True.
   """
   if node:
-    cnode = node.firstChild
-    while cnode is not None:
+    for cnode in node.childNodes:
+      if isTextElement(cnode):
+        continue
       if names_only:
         yield cnode.tagName
       else:
         yield cnode
-      cnode = cnode.nextSibling
 
 def nodeHasChild(node, tag, ignorecase=False):
   """
@@ -84,9 +87,13 @@ def isTextNode(node):
     return False
   if node.firstChild.nextSibling:
     return False
-  if node.firstChild.nodeType != minidom.Element.TEXT_NODE:
-    return False
-  return True
+  return isTextElement(node.firstChild)
+
+def isTextElement(node):
+  """
+  True if the given node _is_ text
+  """
+  return node.nodeType == minidom.Element.TEXT_NODE
 
 def getNodeText(node):
   """

@@ -1,6 +1,8 @@
 # Stardew Valley Save Interrogation
 The `savefile.py` module displays information contained within a Stardew Valley save file, such as the locations of forage objects, terrain features, locations and progress of crops, animal types, names, and happiness, just to name a few.
 
+NOTE: This README file (and the rest of this repository, for that matter) are a work in progress.
+
 # Examples
 
 List artifact spots (hoe spots with three little "worms"):
@@ -44,6 +46,14 @@ You can specify your save file by name, name and ID, or path. For instance, with
 
 `python savefile.py ~/.config/StardewValley/Saves/Haven_316643857 <arguments>`
 
+## Linting
+
+This repository supplies a pre-commit hook in the `scripts/` directory. See the comment at the top of the file for a complete description of what can be done.
+
+That said, if you wish to use the included `pylintrc` file, invoke the following:
+
+`git config hooks.pylintrc pylintrc`
+
 ## Pattern matching
 
 The following arguments accept crude glob-like patterns: `-n,--name`, `-m,--map`, and `-t,--type`.
@@ -73,15 +83,19 @@ This includes forageables, artifact spots, machines, and more.
 
 The `-l,--data-level` argument has no effect on the output.
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has the following effects:
+| Category | Behavior |
+| -------- | -------- |
+| `forage` | Only display objects included in the `FORAGE` set (see `data/forage.json`) |
+| `artifact` | Only display artifact spots |
 
 ### `small`, `large`, `features`
 
-This includes things part of the terrain: hoe dirt, flooring, trees, fruit trees, grass, and bushes.
+This includes things part of the terrain: hoe dirt, flooring, trees, fruit trees, grass, and bushes. `features` includes both `small` and `large` terrain features.
 
 The `-l,--data-level` argument has no effect on the output.
 
-<!-- TODO: document -C effects -->
+Because crops are small terrain features, all categories that apply to crops will also apply to small terrain features.
 
 ### `crops`
 
@@ -95,7 +109,13 @@ The `-l,--data-level` argument has the following effects:
 | `long`    | Include fertilizer type, seasons, whether or not this is a forage crop, regrow delay if the crop regrows, and the percent chance for extra crops at harvest, if non-zero |
 | `full`    | Include numeric fertilizer ID, phase values, current phase, current phase day, minimum and maximum harvest count if applicable, and the exact chance for extra crops |
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has the following effects:
+| Category | Behavior |
+| -------- | -------- |
+| `cropready` | Only display crops ready for harvest |
+| `cropdead` | Only display dead crops |
+| `nofert` | Only display crops that are unfertilized |
+| `fertnocrop` | Only display `HoeDirt` spots that are fertilized but lack a crop |
 
 ### `trees`
 
@@ -104,14 +124,12 @@ This includes every `Tree` terrain feature. Does not include fruit trees.
 The `-l,--data-level` argument has the following effects:
 | Level     | Effect |
 | --------- | ------ |
-| `brief`   | Include map name, tree kind, `"stump"` if the tree is a stump, current stage number, current stage name, `"seed"` if the tree has a seed, `"tapped"` if the tree is tapped, and `"fertilized"` if the tree is fertilized |
-| `normal`  | No additional behavior |
-| `long`    | Include numeric tree type and health |
+| `brief`   | Output map name, tree kind, and growth stage |
+| `normal`  | Include `"tapped"`, `"has seed"`, or `"fertilized"` if the tree is tapped, has a seed, or if the tree is fertilized, respectively |
+| `long`    | Include tile position, numeric tree type, numeric growth stage, and health |
 | `full`    | No additional behavior |
 
-<!-- TODO: move various "brief" values into "normal" -->
-
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has no effect here.
 
 ### `fruittrees`
 
@@ -120,14 +138,14 @@ This includes every `FruitTree` terrain feature. Does not include normal trees.
 The `-l,--data-level` argument has the following effects:
 | Level     | Effect |
 | --------- | ------ |
-| `brief`   | Include map name, tree kind, `"stump"` if the tree is a stump, current stage number, current stage name, greenhouse status, season, and either days until ready or days since ready |
-| `normal`  | No additional behavior |
-| `long`    | Include fruit name and `greenhouse-tile` status |
+| `brief`   | Output map name, tree kind, whether or not the tree is a stump, coal days (see below), and either days until ready or current quality |
+| `normal`  | Include season information and number of fruits |
+| `long`    | Include tile position, numeric tree type, numberic growth stage, health, and age in years, months, and days |
 | `full`    | No additional behavior |
 
-<!-- TODO: move various "brief" values into "normal" -->
+When a tree is struck by lightning, it will produce coal instead of its normal fruit for a few days.
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has no effect here.
 
 ### `animals`
 
@@ -141,7 +159,7 @@ The `-l,--data-level` argument has the following effects:
 | `long`    | Include tile position |
 | `full`    | Always output numeric friendship and happiness values. Disables the special logic for maxed values |
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has no effect here.
 
 ### `slimes`
 
@@ -155,7 +173,7 @@ The `-l,--data-level` argument has the following effects:
 | `long`    | Include both pixel coordinates and experience gained upon killing |
 | `full`    | No additional behavior |
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has no effect here.
 
 ### `machines`
 
@@ -163,7 +181,10 @@ This includes machines that contain an object and are on.
 
 The `-l,--data-level` argument has no effect on the output.
 
-<!-- TODO: document -C effects -->
+The `-C,--category` argument has the following singular effect:
+| Category | Behavior |
+| -------- | -------- |
+| `ready` | Only display machines ready for harvest |
 
 ## Output filtering
 

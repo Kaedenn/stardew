@@ -1,0 +1,151 @@
+#!/bin/bash
+#
+# Apply pylint to tracked Python files
+#
+# Author: Kaedenn A. D. N.
+#
+# Copy this file to your .git/hooks/ directory if you'd like to use it:
+#   cp scripts/pre-commit .git/hooks/pre-commit
+#
+# This hook script will run pylint against any Python files to be
+# committed and abort the commit if pylint complains about errors.
+# Furthermore, this script compares the C# "scripts" in the
+# scripts/consolecode/ directory against their counterparts in the
+# actual ConsoleCode/Mods directory, if it can be found. The result
+# of this comparison is purely informational and doesn't affect the
+# commit.
+#
+# CONFIGURATION:
+#
+# git config --type=bool hooks.debug
+#   If set, output a lot of diagnostic information.
+# git config --type=bool hooks.dryrun
+#   If set, alaways abort the commit regardless of pylint status.
+# git config --type=string hooks.lintargs
+#   Additional arguments to pass to pylint.
+# git config --type=bool hooks.strictfail
+#   Abort if pylint complains *at all*.
+# git config --type=string hooks.pylintrc
+#   Path to pylintrc file to use if no other file was chosen.
+#
+# NOTES:
+# If no pylintrc file is configured and hooks.pylintrc is unset or
+# refers to a file that doesn't exist, then pylint itself will
+# determine the file (and, in turn, the rules) to use. This is to allow
+# for using the global pylintrc file in $HOME/.pylint.d.
+
+# Names of configuration keys used in this file
+CONFIG_DEBUG="hooks.debug"
+CONFIG_DRY="hooks.dryrun"
+CONFIG_LINTARGS="hooks.pylintargs"
+CONFIG_STRICTFAIL="hooks.strictfail"
+CONFIG_PYLINTRC="hooks.pylintrc"
+
+# Values of those configuration keys
+C_DEBUG="$(git config --bool "$CONFIG_DEBUG")"
+C_DRY="$(git config --bool "$CONFIG_DRY")"
+C_LINTARGS="$(git config "$CONFIG_LINTARGS")"
+C_STRICTFAIL="$(git config --bool "$CONFIG_STRICTFAIL")"
+C_PYLINTRC="$(git config "$CONFIG_PYLINTRC")"
+
+if [[ -n "$DEBUG_HOOKS" ]]; then
+  C_DEBUG="true"
+fi
+
+if [[ -n "$FORCE_DRY" ]]; then
+  C_DRY="true"
+fi
+
+debug() {
+  if [[ "$C_DEBUG" == "true" ]]; then
+    echo "debug: $0: $@" >&2
+  fi
+}
+
+do_pylint() {
+  # Add our special rcfile if it exists and unless one is given
+  if [[ ! "$C_LINTARGS ${@:2}" =~ --rcfile ]]; then
+    debug "No rcfile given"
+    if [[ -n "$C_PYLINTRC" ]] && [[ -f "$C_PYLINTRC" ]]; then
+      debug "but we have $C_PYLINTRC"
+      C_LINTARGS="$C_LINTARGS --rcfile=$C_PYLINTRC"
+    else
+      debug "and no rcfile is available"
+    fi
+  fi
+  debug "exec: pylint $C_LINTARGS $1 ${@:2}"
+  pylint $C_LINTARGS $1 ${@:2}
+}
+
+do_compare() {
+  local fname="$(basename "$1")"
+  local realdir="ref/ConsoleCode"
+  local realfile="$realdir/$fname"
+  if [[ -f "$realfile" ]]; then
+    debug "comparing script $1 against $realfile..."
+    diff -q "$1" "$realfile" >/dev/null
+    if [[ $? -ne 0 ]]; then
+      echo -e "warning: script $1 differs from $realfile" >&2
+    fi
+  else
+    debug "script $1 does not exist in $realdir"
+  fi
+}
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+  against=HEAD
+else
+  # Initial commit: diff against an empty tree object
+  against=$(git hash-object -t tree /dev/null)
+fi
+
+debug "executing against $against"
+
+declare -a CCODE=()
+declare -a OBJECTS=()
+for obj in $(git diff --cached --name-only -a $against); do
+  if [[ "$obj" =~ .py ]]; then
+    debug "adding object $obj"
+    OBJECTS+=("$obj")
+  elif [[ "$obj" =~ consolecode/.*\.cs ]]; then
+    debug "adding console code object $obj"
+    CCODE+=("$obj")
+  fi
+done
+debug "processing ${#OBJECTS[@]} objects"
+for obj in ${OBJECTS[@]}; do
+  do_pylint "$obj"
+  if [[ $? -ne 0 ]]; then
+    if [[ "$C_STRICTFAIL" == "true" ]]; then
+      debug "strict fail enabled; aborting commit"
+      exit 1
+    else
+      debug "strict fail disabled; linting again for errors..."
+      do_pylint "$obj" --errors-only
+      if [[ $? -ne 0 ]]; then
+        debug "linting failed"
+        exit 1
+      fi
+    fi
+  fi
+done
+
+debug "processing ${#CCODE[@]} console code scripts"
+if [[ -d "ref/ConsoleCode/" ]]; then
+  for obj in ${CCODE[@]}; do
+    do_compare "$obj"
+  done
+else
+  debug "ref/ConsoleCode/ not a directory; skipping comparison"
+fi
+
+if [[ "$C_DRY" == "true" ]]; then
+  echo "$0: dry run mode enabled; exiting..." >&2
+  exit 1
+fi
+
+debug "linted: ${OBJECTS[@]}"
+debug "linting successful; continuing with commit"
+
+# vim: set ft=bash ts=2 sts=2 sw=2:
